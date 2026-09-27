@@ -1,0 +1,51 @@
+import React from 'react';
+import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { colors, radii, spacing } from './theme';
+
+const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+export function isValidTime(value: string): boolean {
+  return TIME_RE.test(value);
+}
+
+export function TimeField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const valid = value.length === 0 || isValidTime(value);
+  return (
+    <View style={styles.wrap}>
+      <Text style={styles.label}>{label}</Text>
+      <TextInput
+        value={value}
+        onChangeText={onChange}
+        placeholder="HH:mm"
+        placeholderTextColor={colors.textMuted}
+        keyboardType="numbers-and-punctuation"
+        maxLength={5}
+        style={[styles.input, !valid && styles.invalid]}
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  wrap: { flex: 1 },
+  label: { fontSize: 13, color: colors.textMuted, marginBottom: spacing.xs },
+  input: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    fontSize: 16,
+    color: colors.text,
+    backgroundColor: colors.card,
+  },
+  invalid: { borderColor: colors.danger },
+});
