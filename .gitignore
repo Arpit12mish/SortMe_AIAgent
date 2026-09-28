@@ -42,3 +42,10 @@ yarn-error.*
 
 # Claude Code runtime state
 .claude/scheduled_tasks.lock
+
+# Backend (Maven / secrets)
+backend/target/
+backend/.env
+backend/.env.local
+backend/*.pem
+backend/*.pkcs8

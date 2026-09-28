@@ -1,0 +1,21 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/sortme_test_db
+    username: sortme_user
+    password: sortme_dev_local_only
+  flyway:
+    clean-disabled: false
+
+sortme:
+  session-signing-key: BiBsEpQelFVOl/8cjfTqcyH06EVqKSwT5Z3YmCEt5QU=
+  oauth-state-signing-key: bdQSVH7D3oTinpNR4iQGXPUJUEWfAbjP1YI4Wl8W4OM=
+  token-encryption-key: 5ucUaV+PIQ4xV1xX4ycICuIEHZKZIHhA2/BL5DtNyeE=
+  google:
+    client-id: test-google-client-id
+    client-secret: test-google-client-secret
+  github:
+    app-id: "123"
+    app-slug: sortme-test
+    client-id: test-github-client-id
+    client-secret: test-github-client-secret
+    private-key-base64: ""

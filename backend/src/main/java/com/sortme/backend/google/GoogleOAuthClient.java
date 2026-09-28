@@ -1,0 +1,132 @@
+package com.sortme.backend.google;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sortme.backend.config.SortMeProperties;
+import com.sortme.backend.exception.ProviderErrorException;
+import com.sortme.backend.exception.ProviderNotConfiguredException;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.util.UriComponentsBuilder;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+
+@Component
+@RequiredArgsConstructor
+public class GoogleOAuthClient {
+
+    private static final String AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth";
+    private static final String TOKEN_URL = "https://oauth2.googleapis.com/token";
+    private static final String REVOKE_URL = "https://oauth2.googleapis.com/revoke";
+
+    private final SortMeProperties properties;
+    private final ObjectMapper objectMapper;
+    private final RestClient restClient = RestClient.create();
+
+    private void requireConfigured() {
+        SortMeProperties.Google google = properties.getGoogle();
+        if (google.getClientId() == null || google.getClientId().isBlank()
+            || google.getClientSecret() == null || google.getClientSecret().isBlank()) {
+            throw new ProviderNotConfiguredException("Google OAuth");
+        }
+    }
+
+    /** Builds the URL the mobile app opens in the system browser. `codeChallenge`
+     * comes from the app's own PKCE pair -- this backend never sees the verifier
+     * until the exchange call. */
+    public String buildAuthorizeUrl(String scope, String state, String codeChallenge) {
+        requireConfigured();
+        return UriComponentsBuilder.fromUriString(AUTHORIZE_URL)
+            .queryParam("client_id", properties.getGoogle().getClientId())
+            .queryParam("redirect_uri", properties.getOauthRedirectUri())
+            .queryParam("response_type", "code")
+            .queryParam("scope", scope)
+            .queryParam("access_type", "offline")
+            // Forces the consent screen every time so a *reconnect* also
+            // yields a fresh refresh_token (Google only issues one on the
+            // very first consent otherwise).
+            .queryParam("prompt", "consent")
+            .queryParam("code_challenge", codeChallenge)
+            .queryParam("code_challenge_method", "S256")
+            .queryParam("state", state)
+            .build()
+            .toUriString();
+    }
+
+    public GoogleTokenResponse exchangeCode(String code, String codeVerifier) {
+        requireConfigured();
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("client_id", properties.getGoogle().getClientId());
+        form.add("client_secret", properties.getGoogle().getClientSecret());
+        form.add("code", code);
+        form.add("code_verifier", codeVerifier);
+        form.add("redirect_uri", properties.getOauthRedirectUri());
+        form.add("grant_type", "authorization_code");
+        return post(form);
+    }
+
+    public GoogleTokenResponse refresh(String refreshToken) {
+        requireConfigured();
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("client_id", properties.getGoogle().getClientId());
+        form.add("client_secret", properties.getGoogle().getClientSecret());
+        form.add("refresh_token", refreshToken);
+        form.add("grant_type", "refresh_token");
+        return post(form);
+    }
+
+    private GoogleTokenResponse post(MultiValueMap<String, String> form) {
+        try {
+            return restClient.post()
+                .uri(TOKEN_URL)
+                .body(form)
+                .retrieve()
+                .body(GoogleTokenResponse.class);
+        } catch (RestClientResponseException e) {
+            boolean invalidGrant = e.getResponseBodyAsString().contains("invalid_grant");
+            throw new ProviderErrorException(
+                "Google token request failed: " + e.getStatusCode(), e, !invalidGrant, invalidGrant
+            );
+        }
+    }
+
+    /** Revokes a token (access or refresh -- Google revokes the whole grant
+     * either way). Best-effort: a failure here shouldn't block local
+     * disconnect, since we still stop using and delete the stored token. */
+    public void revoke(String token) {
+        try {
+            restClient.post()
+                .uri(UriComponentsBuilder.fromUriString(REVOKE_URL).queryParam("token", token).build().toUri())
+                .retrieve()
+                .toBodilessEntity();
+        } catch (RestClientResponseException e) {
+            // Already revoked/expired tokens 400 here; nothing actionable.
+        }
+    }
+
+    /**
+     * Extracts the `email` claim from a Google-issued id_token for display
+     * purposes only (e.g. "Connected as jane@example.com"). This is a
+     * best-effort label, not an authentication decision: the token arrives
+     * directly from Google's token endpoint over TLS in the same call that
+     * returned the access/refresh token, so we decode its payload without
+     * re-verifying the RS256 signature (which would require fetching and
+     * caching Google's JWKS for no security benefit here).
+     */
+    public String extractEmail(String idToken) {
+        try {
+            String[] parts = idToken.split("\\.");
+            byte[] payload = Base64.getUrlDecoder().decode(parts[1]);
+            JsonNode node = objectMapper.readTree(new String(payload, StandardCharsets.UTF_8));
+            JsonNode email = node.get("email");
+            return email != null ? email.asText() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+}

@@ -1,0 +1,63 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  application:
+    name: sortme-backend
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:sortme_db}
+    username: ${DB_USER:sortme_user}
+    password: ${DB_PASSWORD:sortme_dev_local_only}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+logging:
+  level:
+    # Never enable DEBUG/TRACE for these in an environment that touches
+    # tokens or imported content: request/response bodies and headers can
+    # leak into logs at those levels.
+    org.springframework.web: INFO
+    com.sortme.backend: INFO
+
+sortme:
+  # Signs our own short-lived session and OAuth-state tokens. Base64, 32+
+  # random bytes. If unset, a random key is generated at startup for local
+  # dev only (logged as a warning) -- sessions won't survive a restart.
+  session-signing-key: ${SORTME_SESSION_SIGNING_KEY:}
+  session-ttl-days: 365
+  oauth-state-signing-key: ${SORTME_OAUTH_STATE_SIGNING_KEY:}
+  oauth-state-ttl-minutes: 10
+  # AES-256-GCM key (base64, exactly 32 bytes) used to encrypt provider
+  # tokens at rest. If unset, a random key is generated at startup for
+  # local dev only -- previously stored tokens become unreadable on restart.
+  token-encryption-key: ${SORTME_TOKEN_ENC_KEY:}
+  # Must match the `scheme` registered in the mobile app's app.json and the
+  # redirect URI registered with each provider console.
+  oauth-redirect-uri: ${SORTME_OAUTH_REDIRECT_URI:sortme://oauth-redirect}
+  # Where this server is reachable from the phone under test (used to build
+  # the Google Picker page URL). For a physical iPhone/emulator this must be
+  # your Mac's LAN IP, not localhost.
+  public-base-url: ${SORTME_PUBLIC_BASE_URL:http://localhost:8080}
+
+  google:
+    client-id: ${GOOGLE_OAUTH_CLIENT_ID:}
+    client-secret: ${GOOGLE_OAUTH_CLIENT_SECRET:}
+    project-number: ${GOOGLE_CLOUD_PROJECT_NUMBER:}
+
+  github:
+    app-id: ${GITHUB_APP_ID:}
+    app-slug: ${GITHUB_APP_SLUG:}
+    client-id: ${GITHUB_APP_CLIENT_ID:}
+    client-secret: ${GITHUB_APP_CLIENT_SECRET:}
+    # PEM contents of the App's private key, base64-encoded as a single line
+    # so it can live in one env var.
+    private-key-base64: ${GITHUB_APP_PRIVATE_KEY_BASE64:}

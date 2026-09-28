@@ -1,0 +1,80 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Select Google Docs</title>
+  <style>
+    html, body { height: 100%; margin: 0; font-family: -apple-system, Roboto, sans-serif; }
+    #status { display: flex; align-items: center; justify-content: center; height: 100%; color: #444; padding: 24px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div id="status">Loading picker…</div>
+  <script src="https://apis.google.com/js/api.js"></script>
+  <script>
+    // This page runs only inside the app's own WebView, loaded from our
+    // backend with a short-lived, single-purpose token (see
+    // PickerSessionService). It never talks to any origin other than
+    // Google's picker API and this same backend, and it hands the selected
+    // file ids back to the app via postMessage -- it never itself calls
+    // /api/connections/google-docs/import.
+    function post(message) {
+      if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+        window.ReactNativeWebView.postMessage(JSON.stringify(message));
+      }
+    }
+
+    function setStatus(text) {
+      document.getElementById('status').textContent = text;
+    }
+
+    var params = new URLSearchParams(window.location.search);
+    var pickerToken = params.get('pickerToken');
+    if (!pickerToken) {
+      setStatus('Missing picker session token.');
+      post({ type: 'error', message: 'missing_picker_token' });
+    } else {
+      fetch('/api/connections/google-docs/picker-page-data?pickerToken=' + encodeURIComponent(pickerToken))
+        .then(function (res) {
+          if (!res.ok) throw new Error('picker session expired or invalid');
+          return res.json();
+        })
+        .then(function (data) {
+          gapi.load('picker', { callback: function () { openPicker(data.accessToken, data.appId); } });
+        })
+        .catch(function (err) {
+          setStatus('Could not start the picker: ' + err.message);
+          post({ type: 'error', message: String(err.message || err) });
+        });
+    }
+
+    function openPicker(accessToken, appId) {
+      setStatus('');
+      var docsView = new google.picker.DocsView(google.picker.ViewId.DOCUMENTS)
+        .setMimeTypes('application/vnd.google-apps.document')
+        .setSelectFolderEnabled(false);
+
+      var builder = new google.picker.PickerBuilder()
+        .addView(docsView)
+        .setOAuthToken(accessToken)
+        .setCallback(pickerCallback);
+
+      if (appId) {
+        builder.setAppId(appId);
+      }
+
+      builder.build().setVisible(true);
+    }
+
+    function pickerCallback(data) {
+      if (data.action === google.picker.Action.PICKED) {
+        var fileIds = (data.docs || []).map(function (doc) { return doc.id; });
+        post({ type: 'selected', fileIds: fileIds });
+      } else if (data.action === google.picker.Action.CANCEL) {
+        post({ type: 'cancelled' });
+      }
+    }
+  </script>
+</body>
+</html>

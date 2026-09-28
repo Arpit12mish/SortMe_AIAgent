@@ -25,6 +25,10 @@ export default function TabsLayout() {
         options={{ title: 'Tasks', tabBarIcon: ({ color }) => <TabIcon symbol="✅" color={color} /> }}
       />
       <Tabs.Screen
+        name="connections"
+        options={{ title: 'Connect', tabBarIcon: ({ color }) => <TabIcon symbol="🔗" color={color} /> }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{ title: 'Settings', tabBarIcon: ({ color }) => <TabIcon symbol="⚙️" color={color} /> }}
       />
