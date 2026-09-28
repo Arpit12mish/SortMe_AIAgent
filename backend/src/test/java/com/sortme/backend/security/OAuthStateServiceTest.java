@@ -7,13 +7,16 @@ import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
 
-import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * The state token is the CSRF defense for the OAuth callback: it must bind
- * a specific user to a specific provider and reject anything that doesn't
- * match, is malformed, or has expired.
+ * The state token is the CSRF defense for the OAuth callback -- and, since
+ * the callback is a public endpoint with no other authenticated context
+ * (see ConnectionService#completeOAuthCallback), it is also the *sole*
+ * source of truth for which user, which provider, and which PKCE verifier
+ * a given `code` belongs to. It must reject anything malformed, expired,
+ * or tampered with, and must round-trip the code_verifier exactly.
  */
 class OAuthStateServiceTest {
 
@@ -27,42 +30,39 @@ class OAuthStateServiceTest {
     }
 
     @Test
-    void validatesSuccessfullyForTheSameUserAndProviderItWasIssuedFor() {
+    void parsesBackTheUserProviderAndCodeVerifierItWasIssuedWith() {
         OAuthStateService service = service(10);
         UUID userId = UUID.randomUUID();
 
-        String state = service.issue(userId, ConnectionProvider.GOOGLE_DOCS);
+        String state = service.issue(userId, ConnectionProvider.GOOGLE_DOCS, "the-code-verifier");
+        OAuthStateService.Claims claims = service.parse(state);
 
-        assertThatCode(() -> service.validate(state, userId, ConnectionProvider.GOOGLE_DOCS)).doesNotThrowAnyException();
+        assertThat(claims.userId()).isEqualTo(userId);
+        assertThat(claims.provider()).isEqualTo(ConnectionProvider.GOOGLE_DOCS);
+        assertThat(claims.codeVerifier()).isEqualTo("the-code-verifier");
     }
 
     @Test
-    void rejectsStateWhenValidatedAgainstADifferentUser() {
-        OAuthStateService service = service(10);
-        String state = service.issue(UUID.randomUUID(), ConnectionProvider.GOOGLE_DOCS);
-
-        assertThatThrownBy(() -> service.validate(state, UUID.randomUUID(), ConnectionProvider.GOOGLE_DOCS))
-            .isInstanceOf(InvalidOAuthStateException.class);
-    }
-
-    @Test
-    void rejectsStateWhenValidatedAgainstADifferentProvider() {
+    void distinguishesProvidersAndVerifiersForTheSameUser() {
         OAuthStateService service = service(10);
         UUID userId = UUID.randomUUID();
-        String state = service.issue(userId, ConnectionProvider.GOOGLE_DOCS);
 
-        assertThatThrownBy(() -> service.validate(state, userId, ConnectionProvider.GITHUB))
-            .isInstanceOf(InvalidOAuthStateException.class);
+        String docsState = service.issue(userId, ConnectionProvider.GOOGLE_DOCS, "docs-verifier");
+        String gmailState = service.issue(userId, ConnectionProvider.GOOGLE_GMAIL, "gmail-verifier");
+
+        assertThat(service.parse(docsState).provider()).isEqualTo(ConnectionProvider.GOOGLE_DOCS);
+        assertThat(service.parse(docsState).codeVerifier()).isEqualTo("docs-verifier");
+        assertThat(service.parse(gmailState).provider()).isEqualTo(ConnectionProvider.GOOGLE_GMAIL);
+        assertThat(service.parse(gmailState).codeVerifier()).isEqualTo("gmail-verifier");
     }
 
     @Test
     void rejectsATamperedState() {
         OAuthStateService service = service(10);
-        String state = service.issue(UUID.randomUUID(), ConnectionProvider.GOOGLE_GMAIL);
+        String state = service.issue(UUID.randomUUID(), ConnectionProvider.GOOGLE_GMAIL, "verifier");
         String tampered = state.substring(0, state.length() - 1) + (state.endsWith("A") ? "B" : "A");
 
-        assertThatThrownBy(() -> service.validate(tampered, UUID.randomUUID(), ConnectionProvider.GOOGLE_GMAIL))
-            .isInstanceOf(InvalidOAuthStateException.class);
+        assertThatThrownBy(() -> service.parse(tampered)).isInstanceOf(InvalidOAuthStateException.class);
     }
 
     @Test
@@ -71,11 +71,9 @@ class OAuthStateServiceTest {
         // instance with a different ephemeral dev key.
         OAuthStateService serviceA = service(10);
         OAuthStateService serviceB = service(10);
-        UUID userId = UUID.randomUUID();
-        String state = serviceA.issue(userId, ConnectionProvider.GITHUB);
+        String state = serviceA.issue(UUID.randomUUID(), ConnectionProvider.GITHUB, "verifier");
 
-        assertThatThrownBy(() -> serviceB.validate(state, userId, ConnectionProvider.GITHUB))
-            .isInstanceOf(InvalidOAuthStateException.class);
+        assertThatThrownBy(() -> serviceB.parse(state)).isInstanceOf(InvalidOAuthStateException.class);
     }
 
     @Test
@@ -84,18 +82,15 @@ class OAuthStateServiceTest {
         props.setOauthStateTtlMinutes(0);
         OAuthStateService service = new OAuthStateService(props);
         service.init();
-        UUID userId = UUID.randomUUID();
-        String state = service.issue(userId, ConnectionProvider.GOOGLE_DOCS);
+        String state = service.issue(UUID.randomUUID(), ConnectionProvider.GOOGLE_DOCS, "verifier");
 
         Thread.sleep(1_100); // ttl of 0 minutes still rounds to "now"; sleep past it
-        assertThatThrownBy(() -> service.validate(state, userId, ConnectionProvider.GOOGLE_DOCS))
-            .isInstanceOf(InvalidOAuthStateException.class);
+        assertThatThrownBy(() -> service.parse(state)).isInstanceOf(InvalidOAuthStateException.class);
     }
 
     @Test
     void rejectsAGarbageStateValue() {
         OAuthStateService service = service(10);
-        assertThatThrownBy(() -> service.validate("not-a-jwt", UUID.randomUUID(), ConnectionProvider.GOOGLE_DOCS))
-            .isInstanceOf(InvalidOAuthStateException.class);
+        assertThatThrownBy(() -> service.parse("not-a-jwt")).isInstanceOf(InvalidOAuthStateException.class);
     }
 }

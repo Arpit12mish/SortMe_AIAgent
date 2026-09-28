@@ -40,12 +40,19 @@ sortme:
   # tokens at rest. If unset, a random key is generated at startup for
   # local dev only -- previously stored tokens become unreadable on restart.
   token-encryption-key: ${SORTME_TOKEN_ENC_KEY:}
-  # Must match the `scheme` registered in the mobile app's app.json and the
-  # redirect URI registered with each provider console.
+  # The FINAL redirect back into the app once this backend has finished an
+  # OAuth exchange. Must match the mobile app's app.json "scheme". This is
+  # NOT registered with Google/GitHub directly -- see public-base-url.
   oauth-redirect-uri: ${SORTME_OAUTH_REDIRECT_URI:sortme://oauth-redirect}
-  # Where this server is reachable from the phone under test (used to build
-  # the Google Picker page URL). For a physical iPhone/emulator this must be
-  # your Mac's LAN IP, not localhost.
+  # Where this server is reachable from the phone/browser under test (used
+  # to build both the Google Picker page URL and the OAuth callback URL,
+  # {this}/api/connections/oauth-callback, that gets registered in the
+  # Google Cloud Console and the GitHub App settings). For a physical
+  # iPhone/emulator this must be your Mac's LAN IP, not localhost. Google
+  # rejects a custom-scheme redirect URI outright, which is why the
+  # authorization-code exchange happens at this backend's own HTTPS
+  # callback rather than directly in the mobile app -- see
+  # OAuthCallbackController / ConnectionService#completeOAuthCallback.
   public-base-url: ${SORTME_PUBLIC_BASE_URL:http://localhost:8080}
 
   google:

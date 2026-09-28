@@ -1,6 +1,7 @@
 package com.sortme.backend.connections;
 
 import com.sortme.backend.audit.AuditService;
+import com.sortme.backend.config.SortMeProperties;
 import com.sortme.backend.crypto.TokenCipher;
 import com.sortme.backend.exception.InvalidOAuthStateException;
 import com.sortme.backend.exception.NotFoundException;
@@ -15,9 +16,13 @@ import com.sortme.backend.imported.ImportedDocumentRepository;
 import com.sortme.backend.imported.ImportedEmailRepository;
 import com.sortme.backend.imported.ImportedGitHubItemRepository;
 import com.sortme.backend.security.OAuthStateService;
+import com.sortme.backend.security.PkceUtil;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.time.Instant;
 import java.util.List;
@@ -28,6 +33,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ConnectionService {
 
+    private static final Logger log = LoggerFactory.getLogger(ConnectionService.class);
+
     private final ConnectionRepository connectionRepository;
     private final GitHubSelectedRepoRepository githubReposRepository;
     private final ImportedDocumentRepository importedDocumentRepository;
@@ -37,12 +44,13 @@ public class ConnectionService {
     private final OAuthStateService oauthStateService;
     private final TokenCipher tokenCipher;
     private final AuditService auditService;
+    private final SortMeProperties properties;
 
     private final GoogleOAuthClient googleOAuthClient;
     private final GitHubUserOAuthClient gitHubUserOAuthClient;
     private final GitHubApiClient gitHubApiClient;
 
-    public record StartResult(String authorizeUrl, String state) {
+    public record StartResult(String authorizeUrl) {
     }
 
     // ---- listing ----
@@ -66,56 +74,121 @@ public class ConnectionService {
         );
     }
 
-    // ---- start / exchange ----
+    // ---- start / callback ----
 
-    public StartResult startOAuth(UUID userId, ConnectionProvider provider, String codeChallenge) {
-        String state = oauthStateService.issue(userId, provider);
-        String authorizeUrl = switch (provider) {
-            case GOOGLE_DOCS -> googleOAuthClient.buildAuthorizeUrl(GoogleScopes.DOCS, state, codeChallenge);
-            case GOOGLE_GMAIL -> googleOAuthClient.buildAuthorizeUrl(GoogleScopes.GMAIL, state, codeChallenge);
-            case GITHUB -> gitHubUserOAuthClient.buildAuthorizeUrl(state, codeChallenge);
-        };
-        auditService.record(userId, "OAUTH_START", "provider=" + provider);
-        return new StartResult(authorizeUrl, state);
+    /** Both Google and the GitHub App's user-authorization flow redirect
+     * here. One shared URL (registered once with each provider) is enough
+     * because the signed `state` this backend minted at /start fully
+     * identifies which SortMe user and which of the three providers a given
+     * `code` belongs to -- see OAuthStateService. */
+    private String oauthCallbackUrl() {
+        return properties.getPublicBaseUrl() + "/api/connections/oauth-callback";
     }
 
+    /**
+     * Mints a fresh PKCE pair and a signed state (carrying the verifier) and
+     * returns the provider's real authorize URL. The mobile app only opens
+     * this in a browser and waits for our own redirect back to
+     * `sortme://oauth-redirect` -- it never sees a code, a verifier, or a
+     * token. See PkceUtil for why this leg is backend-driven rather than
+     * client-driven.
+     */
+    public StartResult startOAuth(UUID userId, ConnectionProvider provider) {
+        String codeVerifier = PkceUtil.generateVerifier();
+        String codeChallenge = PkceUtil.challengeFor(codeVerifier);
+        String state = oauthStateService.issue(userId, provider, codeVerifier);
+        String callback = oauthCallbackUrl();
+
+        String authorizeUrl = switch (provider) {
+            case GOOGLE_DOCS -> googleOAuthClient.buildAuthorizeUrl(GoogleScopes.DOCS, state, codeChallenge, callback);
+            case GOOGLE_GMAIL -> googleOAuthClient.buildAuthorizeUrl(GoogleScopes.GMAIL, state, codeChallenge, callback);
+            case GITHUB -> gitHubUserOAuthClient.buildAuthorizeUrl(state, codeChallenge, callback);
+        };
+        auditService.record(userId, "OAUTH_START", "provider=" + provider);
+        return new StartResult(authorizeUrl);
+    }
+
+    /**
+     * Handles the provider's redirect back to this backend: validates
+     * `state`, exchanges `code` for tokens, stores them, and returns the
+     * `sortme://oauth-redirect` URL the caller (OAuthCallbackController)
+     * should 302 the browser to next. Never throws -- any failure becomes
+     * an `result=error` redirect instead, since there is no JSON caller to
+     * hand an exception to at this point in the flow.
+     */
     @Transactional
-    public ConnectionDto exchangeOAuth(UUID userId, ConnectionProvider provider, String code, String codeVerifier, String state) {
-        oauthStateService.validate(state, userId, provider);
-
-        Connection connection = connectionRepository.findByUserIdAndProvider(userId, provider)
-            .orElseGet(() -> {
-                Connection c = new Connection();
-                c.setUserId(userId);
-                c.setProvider(provider);
-                return c;
-            });
-
-        if (provider == ConnectionProvider.GITHUB) {
-            GitHubTokenResponse tokens = gitHubUserOAuthClient.exchangeCode(code, codeVerifier);
-            GitHubUserOAuthClient.GitHubUser user = gitHubUserOAuthClient.getAuthenticatedUser(tokens.accessToken());
-            connection.setAccessTokenEnc(tokenCipher.encrypt(tokens.accessToken()));
-            connection.setRefreshTokenEnc(tokens.refreshToken() != null ? tokenCipher.encrypt(tokens.refreshToken()) : null);
-            connection.setTokenExpiresAt(tokens.expiresInSeconds() != null ? Instant.now().plusSeconds(tokens.expiresInSeconds()) : null);
-            connection.setExternalAccountLabel(user != null ? user.login() : null);
-            connection.setGrantedScopes("github-app-user-auth");
-        } else {
-            String scope = provider == ConnectionProvider.GOOGLE_DOCS ? GoogleScopes.DOCS : GoogleScopes.GMAIL;
-            GoogleTokenResponse tokens = googleOAuthClient.exchangeCode(code, codeVerifier);
-            connection.setAccessTokenEnc(tokenCipher.encrypt(tokens.accessToken()));
-            if (tokens.refreshToken() != null) {
-                connection.setRefreshTokenEnc(tokenCipher.encrypt(tokens.refreshToken()));
-            }
-            connection.setTokenExpiresAt(tokens.expiresInSeconds() != null ? Instant.now().plusSeconds(tokens.expiresInSeconds()) : null);
-            connection.setExternalAccountLabel(tokens.idToken() != null ? googleOAuthClient.extractEmail(tokens.idToken()) : connection.getExternalAccountLabel());
-            connection.setGrantedScopes(scope);
+    public String completeOAuthCallback(String code, String state, String providerError) {
+        if (providerError != null) {
+            log.warn("OAuth provider returned an error: {}", providerError);
+            return errorRedirect("provider_denied");
+        }
+        if (code == null || state == null) {
+            return errorRedirect("missing_code_or_state");
         }
 
-        connection.setStatus(ConnectionStatus.CONNECTED);
-        connection.setLastSyncError(null);
-        connectionRepository.save(connection);
-        auditService.record(userId, "OAUTH_CONNECTED", "provider=" + provider);
-        return toDto(connection);
+        OAuthStateService.Claims claims;
+        try {
+            claims = oauthStateService.parse(state);
+        } catch (InvalidOAuthStateException e) {
+            log.warn("Rejected OAuth callback with invalid state: {}", e.getMessage());
+            return errorRedirect("invalid_state");
+        }
+
+        try {
+            Connection connection = connectionRepository.findByUserIdAndProvider(claims.userId(), claims.provider())
+                .orElseGet(() -> {
+                    Connection c = new Connection();
+                    c.setUserId(claims.userId());
+                    c.setProvider(claims.provider());
+                    return c;
+                });
+
+            if (claims.provider() == ConnectionProvider.GITHUB) {
+                GitHubTokenResponse tokens = gitHubUserOAuthClient.exchangeCode(code, claims.codeVerifier(), oauthCallbackUrl());
+                GitHubUserOAuthClient.GitHubUser user = gitHubUserOAuthClient.getAuthenticatedUser(tokens.accessToken());
+                connection.setAccessTokenEnc(tokenCipher.encrypt(tokens.accessToken()));
+                connection.setRefreshTokenEnc(tokens.refreshToken() != null ? tokenCipher.encrypt(tokens.refreshToken()) : null);
+                connection.setTokenExpiresAt(tokens.expiresInSeconds() != null ? Instant.now().plusSeconds(tokens.expiresInSeconds()) : null);
+                connection.setExternalAccountLabel(user != null ? user.login() : null);
+                connection.setGrantedScopes("github-app-user-auth");
+            } else {
+                String scope = claims.provider() == ConnectionProvider.GOOGLE_DOCS ? GoogleScopes.DOCS : GoogleScopes.GMAIL;
+                GoogleTokenResponse tokens = googleOAuthClient.exchangeCode(code, claims.codeVerifier(), oauthCallbackUrl());
+                connection.setAccessTokenEnc(tokenCipher.encrypt(tokens.accessToken()));
+                if (tokens.refreshToken() != null) {
+                    connection.setRefreshTokenEnc(tokenCipher.encrypt(tokens.refreshToken()));
+                }
+                connection.setTokenExpiresAt(tokens.expiresInSeconds() != null ? Instant.now().plusSeconds(tokens.expiresInSeconds()) : null);
+                connection.setExternalAccountLabel(tokens.idToken() != null ? googleOAuthClient.extractEmail(tokens.idToken()) : connection.getExternalAccountLabel());
+                connection.setGrantedScopes(scope);
+            }
+
+            connection.setStatus(ConnectionStatus.CONNECTED);
+            connection.setLastSyncError(null);
+            connectionRepository.save(connection);
+            auditService.record(claims.userId(), "OAUTH_CONNECTED", "provider=" + claims.provider());
+            return successRedirect(claims.provider());
+        } catch (Exception e) {
+            log.warn("OAuth exchange failed for provider {}: {}", claims.provider(), e.getMessage());
+            auditService.record(claims.userId(), "OAUTH_FAILED", "provider=" + claims.provider());
+            return errorRedirect("exchange_failed");
+        }
+    }
+
+    private String successRedirect(ConnectionProvider provider) {
+        return UriComponentsBuilder.fromUriString(properties.getOauthRedirectUri())
+            .queryParam("provider", provider.name())
+            .queryParam("result", "connected")
+            .build()
+            .toUriString();
+    }
+
+    private String errorRedirect(String reason) {
+        return UriComponentsBuilder.fromUriString(properties.getOauthRedirectUri())
+            .queryParam("result", "error")
+            .queryParam("reason", reason)
+            .build()
+            .toUriString();
     }
 
     // ---- GitHub App installation linking ----

@@ -28,7 +28,11 @@ public class WebConfig implements WebMvcConfigurer {
                 // GitHub's own redirect after app installation; see
                 // GitHubSetupCallbackController for why this can't require
                 // our session bearer token.
-                "/api/connections/github/setup-callback"
+                "/api/connections/github/setup-callback",
+                // The shared Google/GitHub OAuth redirect target -- reached
+                // by the user's browser, not the app, so it carries no
+                // bearer token either. See OAuthCallbackController.
+                "/api/connections/oauth-callback"
             );
     }
 }

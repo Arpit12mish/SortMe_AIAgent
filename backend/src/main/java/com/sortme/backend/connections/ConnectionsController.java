@@ -18,13 +18,7 @@ public class ConnectionsController {
     private final ConnectionService connectionService;
     private final SortMeProperties properties;
 
-    public record StartRequest(@NotBlank String codeChallenge) {
-    }
-
-    public record StartResponse(String authorizeUrl, String state) {
-    }
-
-    public record ExchangeRequest(@NotBlank String code, @NotBlank String codeVerifier, @NotBlank String state) {
+    public record StartResponse(String authorizeUrl) {
     }
 
     public record LinkInstallationRequest(@NotBlank String installationId) {
@@ -38,17 +32,14 @@ public class ConnectionsController {
         return connectionService.listConnections(CurrentUserContext.require());
     }
 
+    /** No request body: the app only needs to know where to send the
+     * browser. This backend generates and holds the PKCE pair and the
+     * authorization code exchange happens entirely server-side at
+     * OAuthCallbackController -- see ConnectionService#startOAuth. */
     @PostMapping("/{provider}/start")
-    public StartResponse start(@PathVariable ConnectionProvider provider, @Valid @RequestBody StartRequest request) {
-        ConnectionService.StartResult result = connectionService.startOAuth(CurrentUserContext.require(), provider, request.codeChallenge());
-        return new StartResponse(result.authorizeUrl(), result.state());
-    }
-
-    @PostMapping("/{provider}/exchange")
-    public ConnectionDto exchange(@PathVariable ConnectionProvider provider, @Valid @RequestBody ExchangeRequest request) {
-        return connectionService.exchangeOAuth(
-            CurrentUserContext.require(), provider, request.code(), request.codeVerifier(), request.state()
-        );
+    public StartResponse start(@PathVariable ConnectionProvider provider) {
+        ConnectionService.StartResult result = connectionService.startOAuth(CurrentUserContext.require(), provider);
+        return new StartResponse(result.authorizeUrl());
     }
 
     @GetMapping("/github/install-url")

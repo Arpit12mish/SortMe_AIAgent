@@ -85,15 +85,15 @@ export function listConnections(): Promise<ConnectionDto[]> {
   return apiFetch('/api/connections');
 }
 
-export function startOAuth(provider: ConnectionProviderId, codeChallenge: string): Promise<{ authorizeUrl: string; state: string }> {
-  return apiFetch(`/api/connections/${provider}/start`, { method: 'POST', body: { codeChallenge } });
-}
-
-export function exchangeOAuth(
-  provider: ConnectionProviderId,
-  params: { code: string; codeVerifier: string; state: string }
-): Promise<ConnectionDto> {
-  return apiFetch(`/api/connections/${provider}/exchange`, { method: 'POST', body: params });
+/**
+ * Returns the URL to open in the system browser. The backend generates and
+ * holds the PKCE pair itself and completes the whole authorization-code
+ * exchange server-side when the provider redirects back to it -- see
+ * src/connections/oauth.ts. This call carries no request body: there is
+ * nothing sensitive for the client to contribute.
+ */
+export function startOAuth(provider: ConnectionProviderId): Promise<{ authorizeUrl: string }> {
+  return apiFetch(`/api/connections/${provider}/start`, { method: 'POST' });
 }
 
 export function disconnectProvider(provider: ConnectionProviderId, deleteImportedData: boolean): Promise<void> {

@@ -20,11 +20,17 @@ import java.util.UUID;
 
 /**
  * Mints and validates the `state` parameter used in every OAuth
- * authorize-request this backend builds. It is a short-lived, signed token
- * binding the flow to (a) the SortMe user who started it and (b) the
- * provider being connected, so a callback can't be replayed against a
- * different user or a different provider's exchange endpoint. This is the
- * CSRF defense the OAuth spec calls for.
+ * authorize-request this backend builds.
+ *
+ * <p>Because the token exchange happens at a public callback this backend
+ * owns (see ConnectionService#completeOAuthCallback) rather than at a
+ * bearer-authenticated endpoint the mobile app calls, there is no separate
+ * "expected user" to cross-check against at that point -- the signed state
+ * token itself is the sole source of truth for which SortMe user and which
+ * provider a given `code` belongs to, and it also carries the PKCE
+ * code_verifier this same backend generated when it minted the authorize
+ * URL. Forging or replaying it against a different flow requires forging
+ * our HMAC signature.
  */
 @Component
 public class OAuthStateService {
@@ -45,11 +51,15 @@ public class OAuthStateService {
         );
     }
 
-    public String issue(UUID userId, ConnectionProvider provider) {
+    public record Claims(UUID userId, ConnectionProvider provider, String codeVerifier) {
+    }
+
+    public String issue(UUID userId, ConnectionProvider provider, String codeVerifier) {
         Instant now = Instant.now();
         return Jwts.builder()
             .subject(userId.toString())
             .claim("provider", provider.name())
+            .claim("cv", codeVerifier)
             .claim("nonce", UUID.randomUUID().toString())
             .issuedAt(Date.from(now))
             .expiration(Date.from(now.plus(properties.getOauthStateTtlMinutes(), ChronoUnit.MINUTES)))
@@ -57,19 +67,16 @@ public class OAuthStateService {
             .compact();
     }
 
-    /** Verifies signature, expiry, and that the state was issued for exactly
-     * this user and provider. Throws InvalidOAuthStateException otherwise. */
-    public void validate(String state, UUID expectedUserId, ConnectionProvider expectedProvider) {
+    /** Verifies signature and expiry, then returns the embedded claims.
+     * Throws InvalidOAuthStateException for anything invalid, expired, or
+     * tampered with. */
+    public Claims parse(String state) {
         try {
-            Claims claims = Jwts.parser().verifyWith(key).build().parseSignedClaims(state).getPayload();
+            io.jsonwebtoken.Claims claims = Jwts.parser().verifyWith(key).build().parseSignedClaims(state).getPayload();
             UUID userId = UUID.fromString(claims.getSubject());
             ConnectionProvider provider = ConnectionProvider.valueOf(claims.get("provider", String.class));
-            if (!userId.equals(expectedUserId)) {
-                throw new InvalidOAuthStateException("OAuth state does not belong to the requesting user");
-            }
-            if (provider != expectedProvider) {
-                throw new InvalidOAuthStateException("OAuth state was issued for a different provider");
-            }
+            String codeVerifier = claims.get("cv", String.class);
+            return new Claims(userId, provider, codeVerifier);
         } catch (JwtException | IllegalArgumentException e) {
             throw new InvalidOAuthStateException("Invalid or expired OAuth state", e);
         }

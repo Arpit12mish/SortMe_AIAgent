@@ -41,11 +41,14 @@ public class GitHubUserOAuthClient {
         }
     }
 
-    public String buildAuthorizeUrl(String state, String codeChallenge) {
+    /** `redirectUri` is this backend's own HTTPS callback (registered as the
+     * App's "User authorization callback URL") -- see GoogleOAuthClient's
+     * buildAuthorizeUrl for why a custom scheme isn't used directly. */
+    public String buildAuthorizeUrl(String state, String codeChallenge, String redirectUri) {
         requireConfigured();
         return UriComponentsBuilder.fromUriString(AUTHORIZE_URL)
             .queryParam("client_id", properties.getGithub().getClientId())
-            .queryParam("redirect_uri", properties.getOauthRedirectUri())
+            .queryParam("redirect_uri", redirectUri)
             .queryParam("state", state)
             .queryParam("code_challenge", codeChallenge)
             .queryParam("code_challenge_method", "S256")
@@ -53,14 +56,14 @@ public class GitHubUserOAuthClient {
             .toUriString();
     }
 
-    public GitHubTokenResponse exchangeCode(String code, String codeVerifier) {
+    public GitHubTokenResponse exchangeCode(String code, String codeVerifier, String redirectUri) {
         requireConfigured();
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add("client_id", properties.getGithub().getClientId());
         form.add("client_secret", properties.getGithub().getClientSecret());
         form.add("code", code);
         form.add("code_verifier", codeVerifier);
-        form.add("redirect_uri", properties.getOauthRedirectUri());
+        form.add("redirect_uri", redirectUri);
         return post(form);
     }
 
