@@ -15,7 +15,7 @@ export default function Index() {
     );
   }
 
-  return <Redirect href={preferences ? '/(tabs)' : '/onboarding'} />;
+  return <Redirect href={preferences ? '/(tabs)' : '/welcome'} />;
 }
 
 const styles = StyleSheet.create({

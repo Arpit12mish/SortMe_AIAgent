@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Text, TextInput, View } from 'react-native';
 import type { Goal } from '../../planning/types';
 import { generateId } from '../../utils/id';
-import { SecondaryButton } from '../Buttons';
-import { colors, radii, spacing } from '../theme';
+import { GhostButton, SecondaryButton } from '../Buttons';
+import { colors, radii, shadows, spacing, typography } from '../theme';
 
 export function GoalsEditor({ value, onChange }: { value: Goal[]; onChange: (next: Goal[]) => void }) {
   const [title, setTitle] = useState('');
@@ -21,9 +21,7 @@ export function GoalsEditor({ value, onChange }: { value: Goal[]; onChange: (nex
       {value.map((g) => (
         <View key={g.id} style={styles.card}>
           <Text style={styles.cardTitle}>{g.title}</Text>
-          <Pressable onPress={() => remove(g.id)}>
-            <Text style={styles.remove}>Remove</Text>
-          </Pressable>
+          <GhostButton label="Remove" onPress={() => remove(g.id)} tone="danger" />
         </View>
       ))}
       <View style={styles.addForm}>
@@ -51,12 +49,15 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
+    ...shadows.card,
   },
-  cardTitle: { fontSize: 15, fontWeight: '600', color: colors.text },
-  remove: { color: colors.danger, fontSize: 13, fontWeight: '600' },
+  cardTitle: { ...typography.bodyStrong, color: colors.text },
+  remove: { color: colors.danger, ...typography.caption, fontWeight: '600' },
   addForm: {
-    backgroundColor: colors.card,
+    backgroundColor: colors.cardElevated,
     borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
     padding: spacing.md,
     gap: spacing.sm,
     marginTop: spacing.sm,
@@ -69,6 +70,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     fontSize: 15,
     color: colors.text,
-    backgroundColor: colors.background,
+    backgroundColor: colors.cardSunken,
   },
 });

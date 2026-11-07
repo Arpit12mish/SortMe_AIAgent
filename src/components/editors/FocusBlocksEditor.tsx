@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import type { TimeRange } from '../../planning/types';
-import { SecondaryButton } from '../Buttons';
+import { GhostButton, SecondaryButton } from '../Buttons';
 import { TimeField, isValidTime } from '../TimeField';
-import { colors, radii, spacing } from '../theme';
+import { colors, radii, shadows, spacing, typography } from '../theme';
 
 export function FocusBlocksEditor({
   value,
@@ -32,9 +32,7 @@ export function FocusBlocksEditor({
           <Text style={styles.cardTitle}>
             {f.start} – {f.end}
           </Text>
-          <Pressable onPress={() => remove(i)}>
-            <Text style={styles.remove}>Remove</Text>
-          </Pressable>
+          <GhostButton label="Remove" onPress={() => remove(i)} tone="danger" />
         </View>
       ))}
       <View style={styles.addForm}>
@@ -59,12 +57,15 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
+    ...shadows.card,
   },
-  cardTitle: { fontSize: 15, fontWeight: '600', color: colors.text },
-  remove: { color: colors.danger, fontSize: 13, fontWeight: '600' },
+  cardTitle: { ...typography.bodyStrong, color: colors.text },
+  remove: { color: colors.danger, ...typography.caption, fontWeight: '600' },
   addForm: {
-    backgroundColor: colors.card,
+    backgroundColor: colors.cardElevated,
     borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
     padding: spacing.md,
     gap: spacing.sm,
     marginTop: spacing.sm,

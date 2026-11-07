@@ -1,5 +1,5 @@
 import { toISODate } from '../planning/time';
-import type { Preferences, Task } from '../planning/types';
+import type { PlanVersion, Preferences, Task } from '../planning/types';
 
 /**
  * Sample onboarding answers for a student balancing classes, interview prep,
@@ -22,6 +22,7 @@ export function createSamplePreferences(): Preferences {
       { id: 'goal-internship', title: 'Land a software internship' },
       { id: 'goal-portfolio', title: 'Ship a polished portfolio project' },
     ],
+    protectedTimeBlocks: [],
     preferredFocusBlocks: [{ start: '18:00', end: '22:00' }],
     mealWindows: {
       breakfast: { start: '08:00', end: '08:30' },
@@ -92,4 +93,36 @@ export function createUrgentInternshipTask(now: Date = new Date()): Task {
 
 export function todayISODate(now: Date = new Date()): string {
   return toISODate(now);
+}
+
+/**
+ * Finds sample tasks that a persisted plan's blocks reference by id but that
+ * don't actually exist in `tasks` — the exact shape of the historical bug
+ * where a lost update during onboarding seeding dropped some of
+ * createSampleTasks()'s rows while the plan (saved once, not racily) still
+ * referenced all of them. Only ever returns tasks whose id matches a known
+ * sample task id, so it can never fabricate a task for a genuinely unrelated
+ * dangling reference, and never touches or duplicates a real user task (those
+ * get ids from generateId('task'), which can't collide with the static
+ * sample ids). Safe to call on every app start: once the missing rows are
+ * created, `tasks` contains them and this returns an empty array.
+ */
+export function findMissingSampleTasks(tasks: Task[], planVersions: PlanVersion[]): Task[] {
+  const existingIds = new Set(tasks.map((t) => t.id));
+  const referencedIds = new Set<string>();
+  for (const version of planVersions) {
+    for (const block of version.blocks) {
+      if (block.taskId) referencedIds.add(block.taskId);
+    }
+  }
+
+  const sampleTasksById = new Map(createSampleTasks().map((t) => [t.id, t]));
+  const missing: Task[] = [];
+  for (const id of referencedIds) {
+    if (!existingIds.has(id)) {
+      const sampleTask = sampleTasksById.get(id);
+      if (sampleTask) missing.push(sampleTask);
+    }
+  }
+  return missing;
 }

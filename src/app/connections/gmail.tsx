@@ -1,12 +1,16 @@
+import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Alert, Linking, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PrimaryButton, SecondaryButton } from '../../components/Buttons';
-import { colors, radii, spacing } from '../../components/theme';
+import { colors, radii, shadows, spacing, typography } from '../../components/theme';
 import { useConnectionsState } from '../../connections/ConnectionsStateContext';
 import type { ImportedItemDto } from '../../connections/types';
+import { todayLocalDate } from '../../checkins/checkinEngine';
+import { addDaysToISODate } from '../../planning/time';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const DEFAULT_WINDOW_DAYS = 30;
 
 function EmailRow({ email }: { email: ImportedItemDto }) {
   const { setItemIncluded, deleteItem } = useConnectionsState();
@@ -41,10 +45,14 @@ function EmailRow({ email }: { email: ImportedItemDto }) {
 }
 
 export default function GmailScreen() {
+  const router = useRouter();
   const { connections, importedItems, refreshConnections, refreshImportedItems, syncGmailNow, loading } =
     useConnectionsState();
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  // A visible, user-adjustable rolling window -- defaults to the past 30
+  // days rather than an invisible backend fallback, so "sync now" always
+  // syncs the exact range shown, and the user can widen or narrow it.
+  const [from, setFrom] = useState(() => addDaysToISODate(todayLocalDate(), -DEFAULT_WINDOW_DAYS));
+  const [to, setTo] = useState(() => todayLocalDate());
   const [searchTerms, setSearchTerms] = useState('interview OR deadline OR offer');
 
   useEffect(() => {
@@ -83,9 +91,17 @@ export default function GmailScreen() {
     <SafeAreaView style={styles.screen} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.helper}>
-          Choose a bounded date range and optional search terms. SortMe never sends, modifies, or deletes mail --
-          these are read-only candidates for you to review below.
+          Choose a bounded date range and optional search terms — defaults to the last {DEFAULT_WINDOW_DAYS} days,
+          widen it as you like. SortMe never sends, modifies, or deletes mail -- these are read-only candidates for
+          you to review below.
         </Text>
+
+        {connection.lastSyncAt && (
+          <Text style={styles.syncMeta}>
+            Last synced {new Date(connection.lastSyncAt).toLocaleString()}
+            {connection.lastSyncError ? ` — ${connection.lastSyncError}` : ''}
+          </Text>
+        )}
 
         <View style={styles.form}>
           <View style={styles.dateRow}>
@@ -115,6 +131,21 @@ export default function GmailScreen() {
           <PrimaryButton label="Sync now" onPress={handleSync} loading={loading} />
         </View>
 
+        <View style={styles.aiActions}>
+          <SecondaryButton
+            label="Scan for interviews & tasks"
+            onPress={() => router.push('/daily-briefing?autoScanGmail=1')}
+          />
+          <SecondaryButton
+            label="Suggest tasks from these emails"
+            onPress={() => router.push('/connections/gmail-task-suggestions')}
+          />
+          <SecondaryButton
+            label="Find emails awaiting your reply"
+            onPress={() => router.push('/connections/gmail-needs-reply')}
+          />
+        </View>
+
         {emails.length === 0 ? (
           <Text style={[styles.helper, { marginTop: spacing.lg }]}>No emails imported yet.</Text>
         ) : (
@@ -132,7 +163,8 @@ export default function GmailScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.lg, paddingBottom: spacing.xl },
-  helper: { fontSize: 14, color: colors.textMuted, marginBottom: spacing.md, lineHeight: 20 },
+  helper: { ...typography.body, color: colors.textMuted, marginBottom: spacing.md, lineHeight: 20 },
+  syncMeta: { ...typography.caption, fontSize: 12, color: colors.textFaint, marginBottom: spacing.md },
   form: {
     backgroundColor: colors.card,
     borderRadius: radii.md,
@@ -140,9 +172,11 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
+    ...shadows.card,
   },
+  aiActions: { marginTop: spacing.md, gap: spacing.sm },
   dateRow: { flexDirection: 'row', gap: spacing.md },
-  label: { fontSize: 13, color: colors.textMuted },
+  label: { ...typography.caption, color: colors.textMuted },
   input: {
     borderWidth: 1,
     borderColor: colors.border,
@@ -151,7 +185,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     fontSize: 15,
     color: colors.text,
-    backgroundColor: colors.background,
+    backgroundColor: colors.cardSunken,
   },
   row: {
     backgroundColor: colors.card,
@@ -160,10 +194,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
+    ...shadows.card,
   },
-  rowTitle: { fontSize: 15, fontWeight: '600', color: colors.text },
-  rowMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
-  rowPreview: { fontSize: 13, color: colors.text, marginTop: spacing.xs },
+  rowTitle: { ...typography.bodyStrong, color: colors.text },
+  rowMeta: { ...typography.caption, fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  rowPreview: { ...typography.caption, color: colors.text, marginTop: spacing.xs },
   rowActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.sm },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
   emptyText: { color: colors.textMuted, textAlign: 'center' },

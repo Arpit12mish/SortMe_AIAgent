@@ -44,15 +44,31 @@ public class GmailClient {
     public record Message(String id, String threadId, String snippet, Part payload) {
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record Thread(String id, List<Message> messages) {
+    }
+
+    public record SendResult(String id, String threadId) {
+    }
+
     /** `query` is a normal Gmail search string, e.g. "after:2026/01/01 before:2026/02/01 (interview OR deadline)". */
     public ListResponse listMessageIds(String accessToken, String query, int maxResults) {
+        return listMessageIds(accessToken, query, maxResults, null);
+    }
+
+    /** Same as {@link #listMessageIds(String, String, int)}, but continues
+     * from a prior page's {@code nextPageToken} -- pass null for the first
+     * page. */
+    public ListResponse listMessageIds(String accessToken, String query, int maxResults, String pageToken) {
         try {
+            UriComponentsBuilder uri = UriComponentsBuilder.fromUriString("https://gmail.googleapis.com/gmail/v1/users/me/messages")
+                .queryParam("q", query)
+                .queryParam("maxResults", maxResults);
+            if (pageToken != null && !pageToken.isBlank()) {
+                uri.queryParam("pageToken", pageToken);
+            }
             return restClient.get()
-                .uri(UriComponentsBuilder.fromUriString("https://gmail.googleapis.com/gmail/v1/users/me/messages")
-                    .queryParam("q", query)
-                    .queryParam("maxResults", maxResults)
-                    .build()
-                    .toUri())
+                .uri(uri.build().toUri())
                 .header("Authorization", "Bearer " + accessToken)
                 .retrieve()
                 .body(ListResponse.class);
@@ -68,6 +84,49 @@ public class GmailClient {
                 .header("Authorization", "Bearer " + accessToken)
                 .retrieve()
                 .body(Message.class);
+        } catch (RestClientResponseException e) {
+            throw providerError(e);
+        }
+    }
+
+    /** Fetches every message in a thread, ground truth for "who sent the
+     * last message" -- a single synced message only reflects whichever one
+     * matched a past sync's search query, not necessarily the latest. */
+    public Thread getThread(String accessToken, String threadId) {
+        try {
+            return restClient.get()
+                .uri("https://gmail.googleapis.com/gmail/v1/users/me/threads/{id}?format=full", threadId)
+                .header("Authorization", "Bearer " + accessToken)
+                .retrieve()
+                .body(Thread.class);
+        } catch (RestClientResponseException e) {
+            throw providerError(e);
+        }
+    }
+
+    private record SendRequest(String raw, String threadId) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record SendResponseBody(String id, String threadId) {
+    }
+
+    /** `rawBase64Url` is a complete RFC 2822 message, base64url-encoded (see
+     * GmailMessageBuilder). Setting `threadId` keeps the reply in the
+     * existing Gmail thread instead of starting a new one. */
+    public SendResult sendMessage(String accessToken, String rawBase64Url, String threadId) {
+        try {
+            SendResponseBody body = restClient.post()
+                .uri("https://gmail.googleapis.com/gmail/v1/users/me/messages/send")
+                .header("Authorization", "Bearer " + accessToken)
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .body(new SendRequest(rawBase64Url, threadId))
+                .retrieve()
+                .body(SendResponseBody.class);
+            if (body == null) {
+                throw new ProviderErrorException("Gmail send returned an empty response", true, false);
+            }
+            return new SendResult(body.id(), body.threadId());
         } catch (RestClientResponseException e) {
             throw providerError(e);
         }

@@ -6,12 +6,17 @@ import { getOrCreateInstallId, getStoredSessionToken, storeSessionToken } from '
  * Simulator; a physical iPhone or an Android emulator/device needs your
  * Mac's LAN IP here (same requirement as the Metro bundler URL). Set via
  * EXPO_PUBLIC_BACKEND_URL in a .env.local at the project root.
+ *
+ * Exported so src/voice/api.ts can target the same backend for its
+ * expo-file-system-based upload, which doesn't go through apiFetch.
  */
-function getBackendBaseUrl(): string {
+export function getBackendBaseUrl(): string {
   return process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://localhost:8080';
 }
 
-async function ensureSessionToken(): Promise<string> {
+/** Exported so src/voice/api.ts can reuse the same session bootstrap for
+ * its expo-file-system-based upload instead of duplicating it. */
+export async function ensureSessionToken(): Promise<string> {
   const existing = await getStoredSessionToken();
   if (existing) return existing;
   return bootstrapSession();
@@ -46,7 +51,12 @@ interface RequestOptions {
   query?: Record<string, string | boolean | undefined>;
 }
 
-async function apiFetch<T>(path: string, options: RequestOptions = {}, isRetry = false): Promise<T> {
+/** Exported so src/ai/api.ts can reuse session bootstrap, 401-retry, and
+ * ApiError parsing instead of duplicating them. (src/voice/api.ts uploads
+ * through expo-file-system's File.upload() instead -- see its own file for
+ * why -- so it doesn't go through this function, only through
+ * ensureSessionToken/getBackendBaseUrl above.) */
+export async function apiFetch<T>(path: string, options: RequestOptions = {}, isRetry = false): Promise<T> {
   const token = await ensureSessionToken();
   const url = new URL(path, getBackendBaseUrl());
   if (options.query) {
@@ -128,6 +138,19 @@ export interface GmailSyncParams {
 
 export function syncGmail(params: GmailSyncParams): Promise<ImportedItemDto[]> {
   return apiFetch('/api/connections/gmail/sync', { method: 'POST', body: params });
+}
+
+export interface SendGmailReplyParams {
+  threadId: string;
+  to: string;
+  subject: string;
+  body: string;
+}
+
+/** Sends a reply the user has already reviewed in-app and explicitly
+ * confirmed -- this call itself performs the real, irreversible send. */
+export function sendGmailReply(params: SendGmailReplyParams): Promise<{ messageId: string; threadId: string }> {
+  return apiFetch('/api/connections/gmail/send', { method: 'POST', body: params });
 }
 
 // ---- github sync ----

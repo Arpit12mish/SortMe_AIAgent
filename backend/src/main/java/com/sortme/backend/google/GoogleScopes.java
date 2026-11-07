@@ -5,7 +5,7 @@ package com.sortme.backend.google;
  * never anything broader than the feature needs. */
 public final class GoogleScopes {
     public static final String DOCS = "openid email https://www.googleapis.com/auth/drive.file";
-    public static final String GMAIL = "openid email https://www.googleapis.com/auth/gmail.readonly";
+    public static final String GMAIL = "openid email https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send";
 
     private GoogleScopes() {
     }

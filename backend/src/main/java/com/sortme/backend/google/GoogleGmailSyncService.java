@@ -26,9 +26,12 @@ public class GoogleGmailSyncService {
 
     private static final Logger log = LoggerFactory.getLogger(GoogleGmailSyncService.class);
     private static final DateTimeFormatter GMAIL_DATE = DateTimeFormatter.ofPattern("yyyy/MM/dd");
-    /** Bounds a single sync so a wide date range can't pull in thousands of
-     * messages (and their bodies) in one call. */
-    private static final int MAX_MESSAGES = 50;
+    /** Messages requested per Gmail list page. */
+    private static final int PAGE_SIZE = 50;
+    /** Bounds a whole sync (across however many pages it takes) so a wide
+     * date range -- the default is now a rolling 30 days, see buildQuery --
+     * can't pull in an unbounded number of messages in one call. */
+    private static final int MAX_MESSAGES_TOTAL = 200;
 
     private final ConnectionService connectionService;
     private final ImportedEmailRepository repository;
@@ -60,8 +63,7 @@ public class GoogleGmailSyncService {
         String accessToken = connectionService.getValidAccessToken(connection);
         String query = buildQuery(request);
 
-        GmailClient.ListResponse listed = gmailClient.listMessageIds(accessToken, query, MAX_MESSAGES);
-        List<GmailClient.MessageRef> refs = listed.messages() != null ? listed.messages() : List.of();
+        List<GmailClient.MessageRef> refs = listAllMessageRefs(accessToken, query);
 
         List<ImportedEmail> results = new ArrayList<>();
         int failureCount = 0;
@@ -78,6 +80,24 @@ public class GoogleGmailSyncService {
         String error = failureCount == 0 ? null : failureCount + " of " + refs.size() + " message(s) failed to import";
         connectionService.recordSyncResult(connection.getId(), !allFailed, error);
         return results;
+    }
+
+    /** Follows nextPageToken across pages until either Gmail reports no more
+     * pages or MAX_MESSAGES_TOTAL is reached -- an explicit, bounded form of
+     * pagination rather than either a single capped page or an unbounded
+     * follow-every-page loop. */
+    private List<GmailClient.MessageRef> listAllMessageRefs(String accessToken, String query) {
+        List<GmailClient.MessageRef> all = new ArrayList<>();
+        String pageToken = null;
+        do {
+            GmailClient.ListResponse page = gmailClient.listMessageIds(accessToken, query, PAGE_SIZE, pageToken);
+            if (page.messages() != null) {
+                all.addAll(page.messages());
+            }
+            pageToken = page.nextPageToken();
+        } while (pageToken != null && !pageToken.isBlank() && all.size() < MAX_MESSAGES_TOTAL);
+
+        return all.size() > MAX_MESSAGES_TOTAL ? all.subList(0, MAX_MESSAGES_TOTAL) : all;
     }
 
     private ImportedEmail syncOne(UUID userId, UUID connectionId, String accessToken, String messageId) {

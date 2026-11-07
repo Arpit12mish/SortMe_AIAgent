@@ -6,7 +6,7 @@
     "scheme": "sortme",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.sortme.app"
@@ -29,7 +29,25 @@
       "expo-router",
       "expo-status-bar",
       "expo-web-browser",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png"
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow SortMe to use the microphone so you can capture tasks, notes, and check-ins by voice.",
+          "speechRecognitionPermission": "Allow SortMe to use speech recognition to turn what you say into text.",
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox"
+          ]
+        }
+      ],
+      "expo-audio",
+      "expo-asset"
     ]
   }
 }

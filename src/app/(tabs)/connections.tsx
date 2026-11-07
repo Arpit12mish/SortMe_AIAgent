@@ -3,7 +3,7 @@ import React, { useEffect } from 'react';
 import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PrimaryButton, SecondaryButton } from '../../components/Buttons';
-import { colors, radii, spacing } from '../../components/theme';
+import { colors, radii, shadows, spacing, typography } from '../../components/theme';
 import { useConnectionsState } from '../../connections/ConnectionsStateContext';
 import type { ConnectionDto, ConnectionProviderId, ConnectionStatus } from '../../connections/types';
 
@@ -151,8 +151,8 @@ export default function ConnectionsScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.lg, paddingBottom: spacing.xl },
-  title: { fontSize: 28, fontWeight: '700', color: colors.text, marginBottom: spacing.xs },
-  helper: { fontSize: 14, color: colors.textMuted, marginBottom: spacing.lg, lineHeight: 20 },
+  title: { ...typography.display, fontSize: 28, color: colors.text, marginBottom: spacing.xs },
+  helper: { ...typography.body, color: colors.textMuted, marginBottom: spacing.lg, lineHeight: 20 },
   card: {
     backgroundColor: colors.card,
     borderRadius: radii.md,
@@ -160,12 +160,13 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
+    ...shadows.card,
   },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  cardTitle: { fontSize: 17, fontWeight: '700', color: colors.text },
-  statusBadge: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
-  cardDescription: { fontSize: 13, color: colors.textMuted, marginTop: 4 },
-  detailLine: { fontSize: 13, color: colors.text, marginTop: spacing.xs },
-  errorLine: { fontSize: 13, color: colors.danger, marginTop: spacing.xs },
+  cardTitle: { ...typography.heading, fontSize: 17, color: colors.text },
+  statusBadge: { ...typography.label, textTransform: 'uppercase' },
+  cardDescription: { ...typography.caption, color: colors.textMuted, marginTop: 4 },
+  detailLine: { ...typography.caption, color: colors.text, marginTop: spacing.xs },
+  errorLine: { ...typography.caption, color: colors.danger, marginTop: spacing.xs },
   cardActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
 });

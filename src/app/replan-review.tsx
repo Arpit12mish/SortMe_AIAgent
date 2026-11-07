@@ -1,12 +1,14 @@
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DangerButton, PrimaryButton, SecondaryButton } from '../components/Buttons';
 import { PlanBlockRow } from '../components/PlanBlockRow';
-import { colors, radii, spacing } from '../components/theme';
+import { colors, radii, shadows, spacing, typography } from '../components/theme';
+import { PressableScale } from '../components/ui';
+import { formatDateLabel } from '../planning/time';
 import type { PlanChange } from '../planning/types';
-import { useAppState } from '../state/AppStateContext';
+import { StalePlanError, useAppState } from '../state/AppStateContext';
 
 const CHANGE_LABEL: Record<PlanChange['type'], string> = {
   added: 'Added',
@@ -36,7 +38,10 @@ function ChangeRow({ change }: { change: PlanChange }) {
 
 export default function ReplanReviewScreen() {
   const router = useRouter();
-  const { proposedPlan, tasks, acceptProposedPlan, editProposedPlan, discardProposedPlan } = useAppState();
+  const { date: dateParam } = useLocalSearchParams<{ date?: string }>();
+  const { activeDate, tasks, planForDate, acceptProposedPlan, editProposedPlan, discardProposedPlan } = useAppState();
+  const date = dateParam ?? activeDate;
+  const { proposed: proposedPlan } = planForDate(date);
   const [editing, setEditing] = useState(false);
   const [forceInclude, setForceInclude] = useState<Set<string>>(new Set());
   const [forceExclude, setForceExclude] = useState<Set<string>>(new Set());
@@ -77,7 +82,7 @@ export default function ReplanReviewScreen() {
     setForceExclude(nextExclude);
     setWorking(true);
     try {
-      await editProposedPlan({
+      await editProposedPlan(date, {
         forceIncludeTaskIds: [...nextInclude],
         forceExcludeTaskIds: [...nextExclude],
       });
@@ -86,11 +91,19 @@ export default function ReplanReviewScreen() {
     }
   };
 
+  const handleStale = () => {
+    Alert.alert('Plan changed', 'A newer version of this plan is now available. Please review it instead.');
+    router.back();
+  };
+
   const handleAccept = async () => {
     setWorking(true);
     try {
-      await acceptProposedPlan();
+      await acceptProposedPlan(date, proposedPlan.id);
       router.back();
+    } catch (e) {
+      if (e instanceof StalePlanError) handleStale();
+      else throw e;
     } finally {
       setWorking(false);
     }
@@ -99,8 +112,11 @@ export default function ReplanReviewScreen() {
   const handleDiscard = async () => {
     setWorking(true);
     try {
-      await discardProposedPlan();
+      await discardProposedPlan(date, proposedPlan.id);
       router.back();
+    } catch (e) {
+      if (e instanceof StalePlanError) handleStale();
+      else throw e;
     } finally {
       setWorking(false);
     }
@@ -109,7 +125,9 @@ export default function ReplanReviewScreen() {
   return (
     <SafeAreaView style={styles.screen} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.heading}>Plan v{proposedPlan.version} — proposed</Text>
+        <Text style={styles.heading}>
+          Plan v{proposedPlan.version} — proposed{date !== activeDate ? ` for ${formatDateLabel(date)}` : ''}
+        </Text>
 
         {proposedPlan.explanations.map((e, i) => (
           <Text key={i} style={styles.explanation}>
@@ -157,19 +175,19 @@ export default function ReplanReviewScreen() {
 
         {editing && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Adjust what&apos;s included today</Text>
+            <Text style={styles.sectionTitle}>Adjust what&apos;s included</Text>
             <Text style={styles.explanation}>
-              Tap a task to move it in or out of today&apos;s plan. SortMe recomputes the schedule instantly.
+              Tap a task to move it in or out of this plan. SortMe recomputes the schedule instantly.
             </Text>
             {eligibleTasks.map((t) => {
               const scheduled = isScheduledToday(t.id);
               return (
-                <Pressable key={t.id} onPress={() => toggleTask(t.id)} style={styles.editRow}>
+                <PressableScale key={t.id} onPress={() => toggleTask(t.id)} style={styles.editRow}>
                   <Text style={styles.editRowTitle}>{t.title}</Text>
                   <Text style={[styles.editRowStatus, { color: scheduled ? colors.success : colors.textMuted }]}>
-                    {scheduled ? 'In today' : 'Not today'}
+                    {scheduled ? 'Included' : 'Not included'}
                   </Text>
-                </Pressable>
+                </PressableScale>
               );
             })}
           </View>
@@ -188,43 +206,49 @@ export default function ReplanReviewScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.lg, paddingBottom: spacing.xl },
-  heading: { fontSize: 20, fontWeight: '700', color: colors.text, marginBottom: spacing.sm },
-  explanation: { fontSize: 13, color: colors.textMuted, marginBottom: spacing.xs, lineHeight: 18 },
+  heading: { ...typography.heading, fontSize: 20, color: colors.text, marginBottom: spacing.sm },
+  explanation: { ...typography.caption, color: colors.textMuted, marginBottom: spacing.xs, lineHeight: 18 },
   section: { marginTop: spacing.lg },
-  sectionTitle: { fontSize: 13, fontWeight: '700', color: colors.textMuted, marginBottom: spacing.sm, textTransform: 'uppercase' },
+  sectionTitle: { ...typography.label, color: colors.textFaint, marginBottom: spacing.sm },
   changeRow: {
     flexDirection: 'row',
     gap: spacing.sm,
     backgroundColor: colors.card,
     borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
     padding: spacing.md,
     marginBottom: spacing.sm,
+    ...shadows.card,
   },
-  changeType: { fontSize: 12, fontWeight: '700', width: 72 },
-  changeTitle: { fontSize: 14, fontWeight: '600', color: colors.text },
-  changeReason: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
-  flagSection: { backgroundColor: '#FFF7E6', borderRadius: radii.md, padding: spacing.md },
-  riskSection: { backgroundColor: '#FDECEC', borderRadius: radii.md, padding: spacing.md },
+  changeType: { ...typography.label, width: 72 },
+  changeTitle: { ...typography.bodyStrong, fontSize: 14, color: colors.text },
+  changeReason: { ...typography.caption, fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  flagSection: { backgroundColor: colors.tintWarning, borderRadius: radii.md, padding: spacing.md },
+  riskSection: { backgroundColor: colors.tintDanger, borderRadius: radii.md, padding: spacing.md },
   flagTitle: { fontWeight: '700', color: colors.text, marginBottom: spacing.xs },
-  flagRow: { fontSize: 13, color: colors.text, marginBottom: 2 },
+  flagRow: { ...typography.caption, color: colors.text, marginBottom: 2 },
   editRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     backgroundColor: colors.card,
     borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
     padding: spacing.md,
     marginBottom: spacing.sm,
+    ...shadows.card,
   },
-  editRowTitle: { fontSize: 14, fontWeight: '600', color: colors.text },
-  editRowStatus: { fontSize: 12, fontWeight: '700' },
+  editRowTitle: { ...typography.bodyStrong, fontSize: 14, color: colors.text },
+  editRowStatus: { ...typography.label },
   footer: {
     flexDirection: 'row',
     gap: spacing.sm,
     padding: spacing.lg,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    backgroundColor: colors.card,
+    backgroundColor: colors.backgroundAlt,
   },
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md },
-  emptyText: { color: colors.textMuted, fontSize: 16 },
+  emptyText: { color: colors.textMuted, ...typography.bodyStrong, fontSize: 16 },
 });

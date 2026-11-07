@@ -41,6 +41,12 @@ export function toISODate(d: Date): ISODate {
   return `${year}-${month}-${day}`;
 }
 
+/** Local-date arithmetic: `days` may be negative. */
+export function addDaysToISODate(date: ISODate, days: number): ISODate {
+  const [year, month, day] = date.split('-').map(Number);
+  return toISODate(new Date(year, (month ?? 1) - 1, day + days));
+}
+
 export function dayOfWeek(date: ISODate): number {
   const [year, month, day] = date.split('-').map(Number);
   return new Date(year, (month ?? 1) - 1, day).getDay();
@@ -49,6 +55,18 @@ export function dayOfWeek(date: ISODate): number {
 export function formatTimeOfDay(iso: ISODateTime): string {
   const d = new Date(iso);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTH_LABELS = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+/** A friendly "Sun, Oct 5" label for an ISODate, in local time. */
+export function formatDateLabel(date: ISODate): string {
+  const [year, month, day] = date.split('-').map(Number);
+  const d = new Date(year, (month ?? 1) - 1, day);
+  return `${WEEKDAY_LABELS[d.getDay()]}, ${MONTH_LABELS[d.getMonth()]} ${d.getDate()}`;
 }
 
 export interface Interval {

@@ -11,8 +11,11 @@ import org.springframework.web.client.RestClientResponseException;
 public class GoogleDriveClient {
 
     private static final String NATIVE_DOC_MIME_TYPE = "application/vnd.google-apps.document";
-    /** Keeps stored+embedded content bounded; the review UI truncates further. */
-    private static final int MAX_CONTENT_CHARS = 50_000;
+    /** Keeps stored+embedded content bounded; the review UI truncates further.
+     * Large enough that Gemini-based features (see com.sortme.backend.ai) can
+     * read a full study document, not just a preview -- Gemini's context
+     * window has ample headroom at this size. */
+    private static final int MAX_CONTENT_CHARS = 400_000;
 
     private final RestClient restClient = RestClient.create();
 

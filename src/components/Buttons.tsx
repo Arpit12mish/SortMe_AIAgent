@@ -1,6 +1,7 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text } from 'react-native';
-import { colors, radii, spacing } from './theme';
+import { ActivityIndicator, StyleSheet, Text } from 'react-native';
+import { PressableScale } from './ui';
+import { colors, glow, radii, spacing, typography } from './theme';
 
 interface ButtonProps {
   label: string;
@@ -11,47 +12,42 @@ interface ButtonProps {
 
 export function PrimaryButton({ label, onPress, disabled, loading }: ButtonProps) {
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
       disabled={disabled || loading}
-      style={({ pressed }) => [
-        styles.base,
-        { backgroundColor: colors.primary, opacity: disabled ? 0.5 : pressed ? 0.85 : 1 },
-      ]}
+      style={[styles.base, styles.primary, (disabled || loading) && styles.disabled]}
     >
       {loading ? <ActivityIndicator color={colors.primaryText} /> : <Text style={styles.primaryText}>{label}</Text>}
-    </Pressable>
+    </PressableScale>
   );
 }
 
 export function SecondaryButton({ label, onPress, disabled }: ButtonProps) {
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
       disabled={disabled}
-      style={({ pressed }) => [
-        styles.base,
-        styles.secondary,
-        { opacity: disabled ? 0.5 : pressed ? 0.7 : 1 },
-      ]}
+      style={[styles.base, styles.secondary, disabled && styles.disabled]}
     >
       <Text style={styles.secondaryText}>{label}</Text>
-    </Pressable>
+    </PressableScale>
   );
 }
 
 export function DangerButton({ label, onPress, disabled }: ButtonProps) {
   return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      style={({ pressed }) => [
-        styles.base,
-        { backgroundColor: 'transparent', opacity: disabled ? 0.5 : pressed ? 0.7 : 1 },
-      ]}
-    >
+    <PressableScale onPress={onPress} disabled={disabled} style={[styles.base, disabled && styles.disabled]}>
       <Text style={[styles.secondaryText, { color: colors.danger }]}>{label}</Text>
-    </Pressable>
+    </PressableScale>
+  );
+}
+
+/** Small inline text-only action — "Remove from project", "Unlink", "Delete milestone" and the like. */
+export function GhostButton({ label, onPress, disabled, tone = 'default' }: ButtonProps & { tone?: 'default' | 'danger' }) {
+  return (
+    <PressableScale onPress={onPress} disabled={disabled} style={styles.ghost} scaleTo={0.94}>
+      <Text style={[styles.ghostText, tone === 'danger' && { color: colors.danger }]}>{label}</Text>
+    </PressableScale>
   );
 }
 
@@ -63,19 +59,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  primary: {
+    backgroundColor: colors.primary,
+    ...glow(colors.primary),
+  },
   secondary: {
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.border,
   },
+  disabled: {
+    opacity: 0.4,
+  },
   primaryText: {
     color: colors.primaryText,
-    fontSize: 16,
-    fontWeight: '600',
+    ...typography.bodyStrong,
   },
   secondaryText: {
     color: colors.text,
-    fontSize: 16,
-    fontWeight: '600',
+    ...typography.bodyStrong,
+  },
+  ghost: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.xs,
+    alignSelf: 'flex-start',
+  },
+  ghostText: {
+    color: colors.primary,
+    ...typography.caption,
+    fontWeight: '700',
   },
 });

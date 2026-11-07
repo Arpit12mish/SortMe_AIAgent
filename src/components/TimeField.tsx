@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
-import { colors, radii, spacing } from './theme';
+import { colors, radii, spacing, typography } from './theme';
 
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
@@ -36,7 +36,7 @@ export function TimeField({
 
 const styles = StyleSheet.create({
   wrap: { flex: 1 },
-  label: { fontSize: 13, color: colors.textMuted, marginBottom: spacing.xs },
+  label: { ...typography.caption, color: colors.textMuted, marginBottom: spacing.xs },
   input: {
     borderWidth: 1,
     borderColor: colors.border,
@@ -45,7 +45,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     fontSize: 16,
     color: colors.text,
-    backgroundColor: colors.card,
+    backgroundColor: colors.cardSunken,
   },
   invalid: { borderColor: colors.danger },
 });

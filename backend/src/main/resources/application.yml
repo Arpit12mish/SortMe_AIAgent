@@ -19,6 +19,13 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  servlet:
+    multipart:
+      # A spoken "tell me about my day" clip is expected to be well under a
+      # minute; AudioTranscriptionService enforces its own tighter 15MB
+      # check, this is just the outer Spring-level bound.
+      max-file-size: 16MB
+      max-request-size: 17MB
 
 logging:
   level:
@@ -68,3 +75,8 @@ sortme:
     # PEM contents of the App's private key, base64-encoded as a single line
     # so it can live in one env var.
     private-key-base64: ${GITHUB_APP_PRIVATE_KEY_BASE64:}
+
+  gemini:
+    # Google AI Studio key (NOT a Vertex AI service-account credential).
+    api-key: ${GEMINI_API_KEY:}
+    model: ${GEMINI_MODEL:gemini-3.8-flash}

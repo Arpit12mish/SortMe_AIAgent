@@ -20,6 +20,16 @@ export interface GeneratePlanInput {
   parentVersionId?: string;
   idGen: () => string;
   nowIso?: ISODateTime;
+  /** Tasks already claimed by another date's accepted plan — excluded from this
+   *  date's pool entirely (not reported as unscheduled/at-risk; they simply aren't
+   *  this date's concern), so a one-time task is never double-booked across days. */
+  excludeTaskIds?: Set<string>;
+  /** Unfinished work rolling forward from an earlier accepted date (see
+   *  weekPlanning.rolloverCandidatesFor) — keyed by taskId. `remainingMinutes`
+   *  overrides the task's own estimateMinutes for this date's allocation only
+   *  (the task itself is never mutated), and `fromDate` lets the resulting
+   *  block/unscheduled-reason say where the work carried over from. */
+  rolloverFrom?: Map<string, { remainingMinutes: number; fromDate: ISODate }>;
 }
 
 function dayWindowFor(date: ISODate, preferences: Preferences): Interval {
@@ -31,19 +41,74 @@ function dayWindowFor(date: ISODate, preferences: Preferences): Interval {
   };
 }
 
+function commitmentAppliesOn(c: { daysOfWeek: number[]; startDate?: ISODate; endDate?: ISODate }, date: ISODate, dow: number): boolean {
+  return c.daysOfWeek.includes(dow) && (!c.startDate || date >= c.startDate) && (!c.endDate || date <= c.endDate);
+}
+
 function fixedBlocksFor(date: ISODate, preferences: Preferences, idGen: () => string): PlanBlock[] {
   const dow = dayOfWeek(date);
   return preferences.fixedCommitments
-    .filter((c) => c.daysOfWeek.includes(dow))
+    .filter((c) => commitmentAppliesOn(c, date, dow))
     .map((c) => ({
       id: idGen(),
       kind: 'fixed' as const,
+      sourceId: c.id,
       title: c.title,
       start: dateAndTimeToISO(date, c.start),
       end: dateAndTimeToISO(date, c.end),
       flexibility: 'fixed' as const,
       reason: 'Fixed commitment.',
     }));
+}
+
+/** One or two immovable "Travel to/from" blocks around every located commitment that
+ *  applies on `date`, sized by the global `travelTimeMinutes` buffer, clipped to the
+ *  day window. Nothing is emitted when the buffer is unset/zero or a commitment has no location. */
+function travelBlocksFor(date: ISODate, preferences: Preferences, idGen: () => string): PlanBlock[] {
+  const minutes = preferences.travelTimeMinutes ?? 0;
+  if (minutes <= 0) return [];
+  const dow = dayOfWeek(date);
+  const window = dayWindowFor(date, preferences);
+  const windowStartMs = new Date(window.start).getTime();
+  const windowEndMs = new Date(window.end).getTime();
+
+  const blocks: PlanBlock[] = [];
+  for (const c of preferences.fixedCommitments) {
+    if (!c.location || !commitmentAppliesOn(c, date, dow)) continue;
+    const commitStart = dateAndTimeToISO(date, c.start);
+    const commitEnd = dateAndTimeToISO(date, c.end);
+    const commitStartMs = new Date(commitStart).getTime();
+    const commitEndMs = new Date(commitEnd).getTime();
+
+    const toStartMs = Math.max(windowStartMs, commitStartMs - minutes * 60_000);
+    if (toStartMs < commitStartMs) {
+      blocks.push({
+        id: idGen(),
+        kind: 'fixed' as const,
+        sourceId: `${c.id}:travel-to`,
+        title: `Travel to ${c.title}`,
+        start: new Date(toStartMs).toISOString(),
+        end: commitStart,
+        flexibility: 'fixed' as const,
+        reason: 'Travel time.',
+      });
+    }
+
+    const fromEndMs = Math.min(windowEndMs, commitEndMs + minutes * 60_000);
+    if (fromEndMs > commitEndMs) {
+      blocks.push({
+        id: idGen(),
+        kind: 'fixed' as const,
+        sourceId: `${c.id}:travel-from`,
+        title: `Travel from ${c.title}`,
+        start: commitEnd,
+        end: new Date(fromEndMs).toISOString(),
+        flexibility: 'fixed' as const,
+        reason: 'Travel time.',
+      });
+    }
+  }
+  return blocks;
 }
 
 function mealBlocksFor(date: ISODate, preferences: Preferences, idGen: () => string): PlanBlock[] {
@@ -57,6 +122,7 @@ function mealBlocksFor(date: ISODate, preferences: Preferences, idGen: () => str
     return {
       id: idGen(),
       kind: 'meal' as const,
+      sourceId: `meal:${key}`,
       title,
       start: dateAndTimeToISO(date, window.start),
       end: dateAndTimeToISO(date, window.end),
@@ -64,6 +130,26 @@ function mealBlocksFor(date: ISODate, preferences: Preferences, idGen: () => str
       reason: 'Protected meal window.',
     };
   });
+}
+
+/** Recurring blocks of time reserved for something other than a named commitment
+ *  (e.g. "Gym"). Same shape as fixedBlocksFor but over preferences.protectedTimeBlocks,
+ *  no date-range filter (protected time is recurrence-only), and 'protected' flexibility
+ *  so it can shift within tolerance like a meal rather than never moving at all. */
+function protectedTimeBlocksFor(date: ISODate, preferences: Preferences, idGen: () => string): PlanBlock[] {
+  const dow = dayOfWeek(date);
+  return (preferences.protectedTimeBlocks ?? [])
+    .filter((p) => p.daysOfWeek.includes(dow))
+    .map((p) => ({
+      id: idGen(),
+      kind: 'protected' as const,
+      sourceId: p.id,
+      title: p.title,
+      start: dateAndTimeToISO(date, p.start),
+      end: dateAndTimeToISO(date, p.end),
+      flexibility: 'protected' as const,
+      reason: 'Protected time.',
+    }));
 }
 
 function preferredFocusIntervalsFor(date: ISODate, preferences: Preferences): Interval[] {
@@ -106,17 +192,31 @@ function reserveBuffer(
 /** Generates a fresh day plan from scratch: fixed commitments, meals, tasks, breaks, buffer. */
 export function generatePlan(input: GeneratePlanInput): PlanVersion {
   const { date, preferences, idGen } = input;
+  const now = input.nowIso ?? new Date().toISOString();
   const dayWindow = dayWindowFor(date, preferences);
   const fixedBlocks = fixedBlocksFor(date, preferences, idGen);
+  const travelBlocks = travelBlocksFor(date, preferences, idGen);
   const mealBlocks = mealBlocksFor(date, preferences, idGen);
+  const protectedBlocks = protectedTimeBlocksFor(date, preferences, idGen);
   const preferredFocusBlocks = preferredFocusIntervalsFor(date, preferences);
 
-  const busy: Interval[] = [...fixedBlocks, ...mealBlocks];
+  const busy: Interval[] = [...fixedBlocks, ...travelBlocks, ...mealBlocks, ...protectedBlocks];
   const rawGaps = computeFreeGaps(dayWindow, busy);
   const { gaps, bufferBlock } = reserveBuffer(rawGaps, dayWindow.end, BUFFER_MINUTES, idGen);
 
-  const pool = sortTaskPool(input.tasks.filter(isEligibleForPool));
-  const { blocks: taskBlocks, unplaced } = allocateTasksToGaps({
+  // A rolled-over task is allocated using what's actually LEFT of it (remainingMinutes),
+  // never its full original estimate again — the task itself is never mutated, only this
+  // one allocation run sees the reduced duration.
+  const pool = sortTaskPool(
+    input.tasks
+      .filter(isEligibleForPool)
+      .filter((t) => !input.excludeTaskIds?.has(t.id))
+      .map((t) => {
+        const rollover = input.rolloverFrom?.get(t.id);
+        return rollover ? { ...t, estimateMinutes: rollover.remainingMinutes } : t;
+      })
+  );
+  const { blocks: rawTaskBlocks, unplaced } = allocateTasksToGaps({
     gaps,
     tasks: pool,
     preferredFocusBlocks,
@@ -124,18 +224,31 @@ export function generatePlan(input: GeneratePlanInput): PlanVersion {
     breakMinutes: BREAK_MINUTES,
     idGen,
   });
+  const taskBlocks = rawTaskBlocks.map((b) => {
+    const rollover = b.taskId ? input.rolloverFrom?.get(b.taskId) : undefined;
+    if (!rollover) return b;
+    return { ...b, reason: rolloverReason(rollover, input.tasks.find((t) => t.id === b.taskId), now) };
+  });
 
-  const allBlocks = [...fixedBlocks, ...mealBlocks, ...taskBlocks, ...(bufferBlock ? [bufferBlock] : [])].sort(
-    (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()
-  );
+  const allBlocks = [
+    ...fixedBlocks,
+    ...travelBlocks,
+    ...mealBlocks,
+    ...protectedBlocks,
+    ...taskBlocks,
+    ...(bufferBlock ? [bufferBlock] : []),
+  ].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 
   const unscheduledTasks: TaskRef[] = [];
   const atRiskTasks: TaskRef[] = [];
   for (const task of unplaced) {
+    const rollover = input.rolloverFrom?.get(task.id);
     const ref: TaskRef = {
       taskId: task.id,
       title: task.title,
-      reason: `Needs ${task.estimateMinutes} min but no free slot of that length remains today.`,
+      reason: rollover
+        ? `${rolloverReason(rollover, input.tasks.find((t) => t.id === task.id), now)} Still needs ${task.estimateMinutes} min, but no free slot of that length remains today either.`
+        : `Needs ${task.estimateMinutes} min but no free slot of that length remains today.`,
     };
     if (isUrgentToday(task, dayWindow.end)) {
       atRiskTasks.push(ref);
@@ -149,6 +262,12 @@ export function generatePlan(input: GeneratePlanInput): PlanVersion {
     explanations.push('Reserved a 30-minute buffer before bedtime for surprises.');
   } else {
     explanations.push('No buffer reserved: the schedule already runs through bedtime.');
+  }
+  if (input.rolloverFrom && input.rolloverFrom.size > 0) {
+    const names = [...input.rolloverFrom.keys()].map((id) => input.tasks.find((t) => t.id === id)?.title ?? id);
+    explanations.push(
+      `${input.rolloverFrom.size} task(s) carried over unfinished from an earlier day: ${names.join(', ')}.`
+    );
   }
   if (atRiskTasks.length > 0) {
     explanations.push(
@@ -169,8 +288,29 @@ export function generatePlan(input: GeneratePlanInput): PlanVersion {
     atRiskTasks,
     changes: [],
     explanations,
-    createdAt: input.nowIso ?? new Date().toISOString(),
+    createdAt: now,
   };
 }
 
-export { dayWindowFor, fixedBlocksFor, mealBlocksFor, preferredFocusIntervalsFor, reserveBuffer };
+function rolloverReason(
+  rollover: { remainingMinutes: number; fromDate: ISODate },
+  originalTask: Task | undefined,
+  nowIso: ISODateTime
+): string {
+  const originalEstimate = originalTask?.estimateMinutes ?? rollover.remainingMinutes;
+  const overdue = originalTask?.deadline && new Date(originalTask.deadline).getTime() < new Date(nowIso).getTime();
+  return (
+    `Carried over from ${rollover.fromDate}, unfinished there (${rollover.remainingMinutes} of ${originalEstimate} min remaining).` +
+    (overdue ? ' This task is now overdue.' : '')
+  );
+}
+
+export {
+  dayWindowFor,
+  fixedBlocksFor,
+  travelBlocksFor,
+  mealBlocksFor,
+  protectedTimeBlocksFor,
+  preferredFocusIntervalsFor,
+  reserveBuffer,
+};

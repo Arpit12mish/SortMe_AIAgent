@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, FlatList, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Linking, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SecondaryButton } from '../../components/Buttons';
-import { colors, radii, spacing } from '../../components/theme';
+import { colors, radii, shadows, spacing, typography } from '../../components/theme';
+import { PressableScale } from '../../components/ui';
 import { useConnectionsState } from '../../connections/ConnectionsStateContext';
 import type { ImportedItemDto, ImportedItemType } from '../../connections/types';
 
@@ -71,13 +72,14 @@ export default function ImportedItemsScreen() {
     <SafeAreaView style={styles.screen} edges={['bottom']}>
       <View style={styles.filterRow}>
         {FILTERS.map((f) => (
-          <Pressable
+          <PressableScale
             key={f.value}
             onPress={() => setFilter(f.value)}
+            scaleTo={0.93}
             style={[styles.filterChip, filter === f.value && styles.filterChipActive]}
           >
             <Text style={[styles.filterChipText, filter === f.value && styles.filterChipTextActive]}>{f.label}</Text>
-          </Pressable>
+          </PressableScale>
         ))}
       </View>
       <FlatList
@@ -101,13 +103,13 @@ const styles = StyleSheet.create({
   filterChip: {
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.md,
-    borderRadius: radii.sm,
+    borderRadius: radii.pill,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.card,
   },
   filterChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  filterChipText: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
+  filterChipText: { ...typography.caption, fontWeight: '600', color: colors.textMuted },
   filterChipTextActive: { color: colors.primaryText },
   listContent: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl },
   row: {
@@ -117,13 +119,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
+    ...shadows.card,
   },
   rowHeader: { flexDirection: 'row', justifyContent: 'space-between' },
-  typeBadge: { fontSize: 11, fontWeight: '700', color: colors.primary, textTransform: 'uppercase' },
-  errorBadge: { fontSize: 11, fontWeight: '700', color: colors.danger },
-  rowTitle: { fontSize: 15, fontWeight: '600', color: colors.text, marginTop: 2 },
-  rowMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
-  rowPreview: { fontSize: 13, color: colors.text, marginTop: spacing.xs },
+  typeBadge: { ...typography.label, color: colors.primary },
+  errorBadge: { ...typography.label, color: colors.danger },
+  rowTitle: { ...typography.bodyStrong, color: colors.text, marginTop: 2 },
+  rowMeta: { ...typography.caption, fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  rowPreview: { ...typography.caption, color: colors.text, marginTop: spacing.xs },
   rowActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.sm },
   empty: { padding: spacing.xl, alignItems: 'center' },
   emptyText: { color: colors.textMuted },

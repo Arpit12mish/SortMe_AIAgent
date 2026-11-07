@@ -25,6 +25,9 @@ public class SortMeProperties {
     @NestedConfigurationProperty
     private GitHub github = new GitHub();
 
+    @NestedConfigurationProperty
+    private Gemini gemini = new Gemini();
+
     @Data
     public static class Google {
         private String clientId;
@@ -40,5 +43,11 @@ public class SortMeProperties {
         private String clientId;
         private String clientSecret;
         private String privateKeyBase64;
+    }
+
+    @Data
+    public static class Gemini {
+        private String apiKey;
+        private String model = "gemini-3.8-flash";
     }
 }

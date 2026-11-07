@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PrimaryButton, SecondaryButton } from '../components/Buttons';
-import { colors, radii, spacing } from '../components/theme';
+import { colors, radii, shadows, spacing, typography } from '../components/theme';
 import { TimeField, isValidTime } from '../components/TimeField';
 import { FixedCommitmentsEditor } from '../components/editors/FixedCommitmentsEditor';
 import { FocusBlocksEditor } from '../components/editors/FocusBlocksEditor';
@@ -56,6 +56,7 @@ export default function OnboardingScreen() {
           sleepWindow: { wakeTime, sleepTime },
           fixedCommitments: commitments,
           goals,
+          protectedTimeBlocks: [],
           preferredFocusBlocks: focusBlocks,
           mealWindows: meals,
           onboardingCompletedAt: new Date().toISOString(),
@@ -160,11 +161,11 @@ export default function OnboardingScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   header: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
-  stepIndicator: { fontSize: 13, color: colors.textMuted, marginBottom: spacing.xs },
-  title: { fontSize: 24, fontWeight: '700', color: colors.text, marginBottom: spacing.md },
+  stepIndicator: { ...typography.label, color: colors.primary, marginBottom: spacing.xs },
+  title: { ...typography.title, color: colors.text, marginBottom: spacing.md },
   body: { flex: 1 },
   bodyContent: { padding: spacing.lg, paddingTop: 0 },
-  helper: { fontSize: 14, color: colors.textMuted, marginBottom: spacing.md, lineHeight: 20 },
+  helper: { ...typography.body, color: colors.textMuted, marginBottom: spacing.md, lineHeight: 20 },
   rowGap: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.md },
   card: {
     backgroundColor: colors.card,
@@ -174,9 +175,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     gap: spacing.sm,
+    ...shadows.card,
   },
-  cardTitle: { fontSize: 15, fontWeight: '600', color: colors.text },
-  cardSubtitle: { fontSize: 13, color: colors.textMuted },
+  cardTitle: { ...typography.bodyStrong, color: colors.text },
+  cardSubtitle: { ...typography.caption, color: colors.textMuted },
   footer: {
     flexDirection: 'row',
     justifyContent: 'space-between',

@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { Alert, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PrimaryButton, SecondaryButton } from '../../components/Buttons';
-import { colors, radii, spacing } from '../../components/theme';
+import { colors, radii, shadows, spacing, typography } from '../../components/theme';
 import { useConnectionsState } from '../../connections/ConnectionsStateContext';
 import type { ImportedItemDto } from '../../connections/types';
 
@@ -119,7 +119,7 @@ export default function GitHubScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.lg, paddingBottom: spacing.xl },
-  helper: { fontSize: 14, color: colors.textMuted, marginBottom: spacing.md, lineHeight: 20 },
+  helper: { ...typography.body, color: colors.textMuted, marginBottom: spacing.md, lineHeight: 20 },
   form: {
     backgroundColor: colors.card,
     borderRadius: radii.md,
@@ -127,8 +127,9 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
+    ...shadows.card,
   },
-  label: { fontSize: 14, fontWeight: '600', color: colors.text },
+  label: { ...typography.bodyStrong, fontSize: 14, color: colors.text },
   row: {
     backgroundColor: colors.card,
     borderRadius: radii.md,
@@ -136,9 +137,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
+    ...shadows.card,
   },
-  rowTitle: { fontSize: 15, fontWeight: '600', color: colors.text },
-  rowMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  rowTitle: { ...typography.bodyStrong, color: colors.text },
+  rowMeta: { ...typography.caption, fontSize: 12, color: colors.textMuted, marginTop: 2 },
   rowActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.sm },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
   emptyText: { color: colors.textMuted, textAlign: 'center' },

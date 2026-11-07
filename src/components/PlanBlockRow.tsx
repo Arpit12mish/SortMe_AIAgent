@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { formatTimeOfDay } from '../planning/time';
 import type { PlanBlock } from '../planning/types';
-import { colorForBlockKind, colors, radii, spacing } from './theme';
+import { colorForBlockKind, colors, radii, shadows, spacing, typography } from './theme';
 
 const KIND_LABEL: Record<PlanBlock['kind'], string> = {
   fixed: 'Fixed',
@@ -10,6 +10,7 @@ const KIND_LABEL: Record<PlanBlock['kind'], string> = {
   task: 'Task',
   break: 'Break',
   buffer: 'Buffer',
+  protected: 'Protected',
 };
 
 export function PlanBlockRow({ block }: { block: PlanBlock }) {
@@ -38,6 +39,9 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     marginBottom: spacing.sm,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.card,
   },
   accent: {
     width: 4,
@@ -52,23 +56,21 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   time: {
-    fontSize: 13,
+    ...typography.caption,
     fontWeight: '600',
     color: colors.textMuted,
   },
   kind: {
-    fontSize: 12,
-    fontWeight: '700',
+    ...typography.label,
     textTransform: 'uppercase',
   },
   title: {
-    fontSize: 16,
-    fontWeight: '600',
+    ...typography.bodyStrong,
     color: colors.text,
   },
   reason: {
     marginTop: 2,
-    fontSize: 13,
+    ...typography.caption,
     color: colors.textMuted,
   },
 });

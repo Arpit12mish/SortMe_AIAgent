@@ -1,79 +1,77 @@
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import * as WebBrowser from 'expo-web-browser';
+import React, { useEffect, useRef } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
-import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { getGoogleDocsPickerUrl } from '../../connections/api';
 import { useConnectionsState } from '../../connections/ConnectionsStateContext';
 import { colors } from '../../components/theme';
 
-type PickerMessage = { type: 'selected'; fileIds: string[] } | { type: 'cancelled' } | { type: 'error'; message: string };
+// Must exactly match google-picker.html's PICKER_REDIRECT_URI. Runs in the
+// system browser via openAuthSessionAsync, same as the OAuth sign-in flow
+// (see src/connections/oauth.ts) -- an embedded in-app WebView can't
+// reliably get Google's own account/session check to pass inside gapi's
+// picker bootstrap, regardless of cookie settings, which is the same
+// restriction that already made the sign-in flow use the system browser.
+const PICKER_REDIRECT_URI = 'sortme://picker-redirect';
 
 export default function GoogleDocsPickerScreen() {
   const router = useRouter();
   const { importGoogleDocs } = useConnectionsState();
-  const [pickerUrl, setPickerUrl] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  // This effect opens a browser session as its side effect; it must run
+  // exactly once even if the effect fires twice (e.g. React StrictMode).
+  const startedRef = useRef(false);
 
   useEffect(() => {
-    getGoogleDocsPickerUrl()
-      .then((res) => setPickerUrl(res.pickerUrl))
-      .catch((e) => setLoadError(e instanceof Error ? e.message : 'Could not start the picker'));
-  }, []);
+    if (startedRef.current) return;
+    startedRef.current = true;
 
-  const handleMessage = async (event: WebViewMessageEvent) => {
-    let message: PickerMessage;
-    try {
-      message = JSON.parse(event.nativeEvent.data);
-    } catch {
-      return;
-    }
-
-    if (message.type === 'selected') {
-      if (message.fileIds.length === 0) {
-        router.back();
-        return;
-      }
+    (async () => {
       try {
-        await importGoogleDocs(message.fileIds);
-      } catch {
-        Alert.alert('Import failed', 'Could not import the selected document(s). You can retry from the Google Docs screen.');
+        const { pickerUrl } = await getGoogleDocsPickerUrl();
+        const result = await WebBrowser.openAuthSessionAsync(pickerUrl, PICKER_REDIRECT_URI);
+        if (result.type !== 'success' || !result.url) {
+          router.back();
+          return;
+        }
+
+        const redirectUrl = new URL(result.url);
+        const error = redirectUrl.searchParams.get('error');
+        if (error) {
+          Alert.alert('Picker error', error);
+          router.back();
+          return;
+        }
+        if (redirectUrl.searchParams.get('cancelled')) {
+          router.back();
+          return;
+        }
+
+        const fileIds = (redirectUrl.searchParams.get('fileIds') ?? '').split(',').filter(Boolean);
+        if (fileIds.length === 0) {
+          router.back();
+          return;
+        }
+
+        try {
+          await importGoogleDocs(fileIds);
+        } catch {
+          Alert.alert('Import failed', 'Could not import the selected document(s). You can retry from the Google Docs screen.');
+        }
+        router.back();
+      } catch (e) {
+        Alert.alert('Could not start the picker', e instanceof Error ? e.message : 'Unknown error');
+        router.back();
       }
-      router.back();
-    } else if (message.type === 'cancelled') {
-      router.back();
-    } else if (message.type === 'error') {
-      Alert.alert('Picker error', message.message);
-      router.back();
-    }
-  };
-
-  if (loadError) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator color={colors.danger} />
-      </View>
-    );
-  }
-
-  if (!pickerUrl) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
+    })();
+  }, [importGoogleDocs, router]);
 
   return (
-    <WebView
-      source={{ uri: pickerUrl }}
-      onMessage={handleMessage}
-      originWhitelist={['https://*']}
-      style={styles.webview}
-    />
+    <View style={styles.center}>
+      <ActivityIndicator size="large" color={colors.primary} />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  webview: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
 });

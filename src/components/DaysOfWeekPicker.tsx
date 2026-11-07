@@ -1,6 +1,7 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors, radii, spacing } from './theme';
+import { StyleSheet, Text, View } from 'react-native';
+import { colors, radii, spacing, typography } from './theme';
+import { PressableScale } from './ui';
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
@@ -20,13 +21,14 @@ export function DaysOfWeekPicker({
       {DAY_LABELS.map((label, day) => {
         const selected = value.includes(day);
         return (
-          <Pressable
+          <PressableScale
             key={day}
             onPress={() => toggle(day)}
+            scaleTo={0.88}
             style={[styles.chip, selected && styles.chipSelected]}
           >
             <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{label}</Text>
-          </Pressable>
+          </PressableScale>
         );
       })}
     </View>
@@ -36,9 +38,9 @@ export function DaysOfWeekPicker({
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: spacing.xs },
   chip: {
-    width: 32,
-    height: 32,
-    borderRadius: radii.sm,
+    width: 34,
+    height: 34,
+    borderRadius: radii.pill,
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: 'center',
@@ -49,6 +51,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     borderColor: colors.primary,
   },
-  chipText: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
+  chipText: { ...typography.caption, fontWeight: '600', color: colors.textMuted },
   chipTextSelected: { color: colors.primaryText },
 });

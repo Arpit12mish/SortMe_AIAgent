@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PlanBlockRow } from '../components/PlanBlockRow';
-import { colors, radii, spacing } from '../components/theme';
+import { colors, radii, shadows, spacing, typography } from '../components/theme';
+import { PressableScale } from '../components/ui';
+import { formatDateLabel } from '../planning/time';
 import type { PlanVersion } from '../planning/types';
 import { useAppState } from '../state/AppStateContext';
 
@@ -23,6 +25,10 @@ function eventSummary(plan: PlanVersion): string {
       return plan.triggeredBy.description;
     case 'energy_changed':
       return `Energy changed (${plan.triggeredBy.level})`;
+    case 'preferences_changed':
+      return plan.triggeredBy.summary;
+    case 'task_edited':
+      return plan.triggeredBy.summary;
     default:
       return 'Replan';
   }
@@ -31,7 +37,12 @@ function eventSummary(plan: PlanVersion): string {
 export default function HistoryScreen() {
   const { planVersions } = useAppState();
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const sorted = [...planVersions].sort((a, b) => b.version - a.version);
+  // Version numbers are per-date, not global (a fresh date starts its own history at v1), so
+  // two different dates' entries can share a version number — sort chronologically instead,
+  // which stays correct across dates.
+  const sorted = [...planVersions].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
 
   return (
     <SafeAreaView style={styles.screen} edges={['bottom']}>
@@ -42,10 +53,10 @@ export default function HistoryScreen() {
         renderItem={({ item }) => {
           const expanded = expandedId === item.id;
           return (
-            <Pressable style={styles.card} onPress={() => setExpandedId(expanded ? null : item.id)}>
+            <PressableScale style={styles.card} onPress={() => setExpandedId(expanded ? null : item.id)}>
               <View style={styles.cardHeader}>
                 <Text style={styles.cardTitle}>
-                  v{item.version} · {eventSummary(item)}
+                  {formatDateLabel(item.date)} · v{item.version} · {eventSummary(item)}
                 </Text>
                 <Text style={[styles.badge, { color: STATUS_COLOR[item.status] }]}>{item.status}</Text>
               </View>
@@ -59,7 +70,7 @@ export default function HistoryScreen() {
                   ))}
                 </View>
               )}
-            </Pressable>
+            </PressableScale>
           );
         }}
         ListEmptyComponent={
@@ -82,11 +93,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
+    ...shadows.card,
   },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between' },
-  cardTitle: { fontSize: 15, fontWeight: '600', color: colors.text },
-  badge: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
-  cardSubtitle: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  cardTitle: { ...typography.bodyStrong, fontSize: 15, color: colors.text },
+  badge: { ...typography.label, textTransform: 'uppercase' },
+  cardSubtitle: { ...typography.caption, fontSize: 12, color: colors.textMuted, marginTop: 2 },
   expanded: { marginTop: spacing.md },
   empty: { padding: spacing.xl, alignItems: 'center' },
   emptyText: { color: colors.textMuted },
